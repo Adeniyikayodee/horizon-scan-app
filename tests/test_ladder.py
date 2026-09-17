@@ -305,3 +305,20 @@ def test_cap_note_only_when_it_lowers():
     g = ladder.grade(_ev(method="descriptive", model_level="E1", method_quote=""), implementer="X",
                      method_grounded=None)
     assert g["level"] == 1 and g["caps"] == []
+
+
+
+def test_a_failed_evidence_search_is_an_error_not_e1(graded_profile, monkeypatch):
+    async def boom(*a, **k):
+        raise RuntimeError("Error code: 402, credits")
+    monkeypatch.setattr(pipeline.agents, "find_evidence", boom)
+    with pytest.raises(RuntimeError):
+        asyncio.run(pipeline._evidence_for({}, {"name": "O", "region": "Africa"},
+                                           {"name": "P", "what": "w", "url": "", "year": "2024"}, EVCFG))
+
+
+def test_orgs_with_errors_are_scanned_again():
+    assert not pipeline._scanned_cleanly(None)
+    assert not pipeline._scanned_cleanly({"error": "boom", "dropped": []})
+    assert not pipeline._scanned_cleanly({"dropped": [{"stage": "error", "reason": "402"}]})
+    assert pipeline._scanned_cleanly({"dropped": [{"stage": "below the evidence bar"}]})

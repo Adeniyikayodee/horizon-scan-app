@@ -46,6 +46,8 @@ def main() -> None:
                      help="africa focus (default) or a global scan")
     run.add_argument("--profile", default=None,
                      help="scan profile under profiles/, e.g. yes (default: the horizon scan)")
+    run.add_argument("--roster", type=Path, default=None,
+                     help="organization sheet to use instead of the profile's own, e.g. a pilot list")
 
     args = ap.parse_args()
     config.use_profile(getattr(args, "profile", None))
@@ -98,6 +100,8 @@ def main() -> None:
             config.OR_MODEL = args.model
         if args.scope:
             config.SCAN_MODE = args.scope
+        if args.roster:
+            config.ORG_SHEET = args.roster
         if config.PROVIDER == "openrouter" and not config.DRY_RUN:
             print(f"[openrouter] running every stage on {config.OR_MODEL}\n")
         config.require_key()

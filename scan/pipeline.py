@@ -143,6 +143,12 @@ def _read_org(org: dict[str, str]) -> dict[str, Any] | None:
     return None
 
 
+def _scanned_cleanly(payload: dict[str, Any] | None) -> bool:
+    if payload is None or payload.get("error"):
+        return False
+    return not any(d.get("stage") == "error" for d in payload.get("dropped", []))
+
+
 async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, Any]:
     async with sem:
         state = {"id": org["id"], "org": org["name"], "scout": "pending", "read": "pending",
@@ -274,7 +280,14 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
             emit(score="done", verify="run", note=f"grading evidence for {len(scored)}")
             passed = []
             for appr in scored:
-                rec = await _evidence_for(ctx, org, appr, evcfg)
+                try:
+                    rec = await _evidence_for(ctx, org, appr, evcfg)
+                except Exception as e:
+                    # a failed search is not a finding: never let an error read as E1
+                    dropped.append({"org": org["name"], "name": appr["name"], "stage": "error",
+                                    "reason": f"evidence check failed: {str(e)[:120]}", "error": str(e)})
+                    await tick()
+                    continue
                 appr["evidence_record"] = rec
                 _set_evidence_mark(appr, rec, evcfg)
                 if ladder.entry_allowed(rec["level"], rec["african"], evcfg.get("geography") or {}):
@@ -434,10 +447,7 @@ async def _evidence_for(ctx, org: dict[str, str], appr: dict[str, Any], evcfg: d
     evaluation at E3 or above. The program's own document is always read as one more,
     self-published, candidate, so a program with only its own results can still show
     a measured change (E2)."""
-    try:
-        found = await agents.find_evidence(ctx, org, appr, evcfg.get("search_first") or [])
-    except Exception:
-        found = []
+    found = await agents.find_evidence(ctx, org, appr, evcfg.get("search_first") or [])
     lo, hi = config.window("evaluation")
     external = []
     for e in found:
@@ -461,10 +471,7 @@ async def _evidence_for(ctx, org: dict[str, str], appr: dict[str, Any], evcfg: d
         doc = "" if config.DRY_RUN else await asyncio.to_thread(sources.fetch_text, url, config.READ_MAX_CHARS)
         if not doc and not config.DRY_RUN:
             continue                       # an evaluation we cannot read cannot be graded
-        try:
-            r = await agents.read_evidence(ctx, appr, ev, doc)
-        except Exception:
-            continue
+        r = await agents.read_evidence(ctx, appr, ev, doc)
         if ev.get("own"):
             r["independent"] = False       # the program's own document is never independent
             r["peer_reviewed"] = False
@@ -686,7 +693,9 @@ async def run_stage1(only: Path | None = None, progress: Progress = None) -> Non
     manifest = _load_manifest()
     sem = asyncio.Semaphore(config.MAX_CONCURRENCY)
 
-    todo = [o for o in orgs if _read_org(o) is None]
+    # an organization is done only when it was scanned without errors, so a run that
+    # hit a credit limit or an outage is picked up again rather than kept as a result
+    todo = [o for o in orgs if not _scanned_cleanly(_read_org(o))]
     done = len(orgs) - len(todo)
     print(f"stage 1: {len(orgs)} orgs, {done} cached, {len(todo)} to scan, "
           f"concurrency {config.MAX_CONCURRENCY}")
