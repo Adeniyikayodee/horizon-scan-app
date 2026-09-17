@@ -31,6 +31,11 @@ def _ev(**kw):
     ("We compare baseline and endline surveys.", 2),
     ("A tracer study followed graduates.", 2),
     ("The program offers a matching grant to firms.", 1),
+    ("The program randomly offered training to as many people as there were slots.", 4),
+    ("Of these, a random half were awarded a voucher, while the other half served as the control group.", 4),
+    ("We match firms claiming the subsidy with similar firms not claiming the subsidy.", 3),
+    ("We use a conditional difference -in-differences approach.", 3),
+    ("The analysis included pre- and post-training employment comparisons.", 2),
     ("The program trained 5,000 young people.", 1),
 ])
 def test_method_words(quote, level):
@@ -75,9 +80,10 @@ def test_outputs_only_caps_at_e2():
     assert g["level"] == 2
 
 
-def test_ungrounded_outcome_caps_at_e2():
+def test_ungrounded_outcome_is_flagged_not_capped():
     g = ladder.grade(_ev(), implementer="Harambee", method_grounded=True, outcome_grounded=False)
-    assert g["level"] == 2
+    assert g["level"] == 4
+    assert "outcome sentence not found word for word in the evaluation" in g["flags"]
 
 
 def test_different_program_counts_for_nothing():
@@ -283,3 +289,19 @@ def test_golden_file_is_well_formed():
     assert 12 <= len(ev) <= 15
     assert {e["expected_level"] for e in ev} == {1, 2, 3, 4, 5}
     assert all(e["url"].startswith("https://") for e in ev)
+
+
+
+def test_trap_randomized_data_checks_stay_low_when_the_model_reads_the_design():
+    """'Randomized response verifications' match the E4 words, so the code alone would
+    say E4. The model's method and level are ceilings too, so the lower level stands."""
+    g = ladder.grade(_ev(method="before_after", model_level="E2",
+                         method_quote="A QA team conducted randomized response verifications."),
+                     implementer="GIZ", method_grounded=True)
+    assert g["level"] == 2
+
+
+def test_cap_note_only_when_it_lowers():
+    g = ladder.grade(_ev(method="descriptive", model_level="E1", method_quote=""), implementer="X",
+                     method_grounded=None)
+    assert g["level"] == 1 and g["caps"] == []

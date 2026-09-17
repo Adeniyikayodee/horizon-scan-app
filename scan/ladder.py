@@ -32,13 +32,16 @@ _METHOD_LEVEL = {"systematic_review": 5, "meta_analysis": 5, "rct": 4, "quasi_ex
 # only, lowercased, with accents kept (the French patterns carry them).
 _TERMS: list[tuple[int, str]] = [
     (5, r"systematic review|meta[- ]?analys[ie]s|revue syst[ée]matique|m[ée]ta[- ]?analyse"),
-    (4, r"randomi[sz]ed|randomi[sz]ation|\brcts?\b|random assignment|randomly assigned|lottery|"
+    (4, r"randomi[sz]ed|randomi[sz]ation|\brcts?\b|random assignment|\brandomly\b|at random|"
+        r"\ba random (half|third|quarter|subset|sample)\b|lottery|"
         r"al[ée]atoire|randomis[ée]e?s?|tirage au sort"),
     (3, r"difference[- ]in[- ]differences?|regression discontinuity|"
-        r"propensity score matching|matching estimator|matched comparison|exact matching|synthetic control|instrumental variables?|quasi[- ]experiment\w*|comparison group|"
+        r"propensity score matching|matching estimator|matched comparison|exact matching|synthetic control|"
+        r"instrumental variables?|quasi[- ]experiment\w*|comparison group|"
+        r"\bmatch(es|ed)?\b[^.]{0,80}\bwith (similar|comparable)\b|"
         r"control group|double diff[ée]rence|diff[ée]rence de diff[ée]rences|r[ée]gression sur discontinuit[ée]|"
         r"appariement|groupe de comparaison|groupe t[ée]moin|quasi[- ]exp[ée]riment\w*"),
-    (2, r"baseline and endline|before and after|pre[- ]and[- ]post|pre[- ]post|tracer stud(y|ies)|"
+    (2, r"baseline and endline|before and after|pre-? ?and[- ]post|pre[- ]post|tracer stud(y|ies)|"
         r"monitoring data|follow[- ]up survey|enqu[êe]te de suivi|avant et apr[èe]s|situation de r[ée]f[ée]rence"),
 ]
 
@@ -66,8 +69,10 @@ def parse_level(v: Any) -> int:
 
 
 def level_from_terms(quote: str) -> int:
-    """The level the method words in a quoted sentence support, 1 when none."""
-    low = (quote or "").lower()
+    """The level the method words in a quoted sentence support, 1 when none. Hyphens
+    are normalized first, since extracted PDFs break "difference-in-differences" into
+    "difference -in-differences"."""
+    low = re.sub(r"\s*-\s*", "-", (quote or "").lower())
     for level, pat in _TERMS:
         if re.search(pat, low):
             return level
@@ -105,7 +110,9 @@ def grade(ev: dict[str, Any], implementer: str, method_grounded: bool | None,
          than the implementer, or a peer-reviewed publication, else E3
       4. an evaluation that measures only outputs is capped at E2
       5. an evaluation of a different program counts for nothing, E1
-    and the model's own level is a ceiling too."""
+    and the model's own level is a ceiling too. An outcome sentence that is not found
+    word for word is flagged for the reviewer, not capped: the caps rest on the design,
+    and extracted PDFs often break the wording of a results sentence."""
     ev = dict(ev)
     model_level = parse_level(ev.get("model_level"))
     method = str(ev.get("method", "none")).lower()
@@ -113,8 +120,9 @@ def grade(ev: dict[str, Any], implementer: str, method_grounded: bool | None,
     level = min(model_level, _METHOD_LEVEL.get(method, 1))
 
     code_level = level_from_terms(ev.get("method_quote", ""))
-    if method_grounded is not True:
+    if method_grounded is not True and min(level, code_level) > 2:
         caps.append("method sentence not found in the evaluation, capped at E2")
+    if method_grounded is not True:
         code_level = min(code_level, 2)
     level = min(level, code_level)
 
@@ -128,14 +136,13 @@ def grade(ev: dict[str, Any], implementer: str, method_grounded: bool | None,
         if level > 2:
             caps.append("measures outputs, not outcomes, capped at E2")
         level = min(level, 2)
-    if outcome_grounded is False and level > 2:
-        caps.append("outcome sentence not found in the evaluation, capped at E2")
-        level = 2
     if ev.get("program_matches") is False:
         caps.append("evaluates a different program, not counted")
         level = 1
 
     flags = []
+    if outcome_grounded is False:
+        flags.append("outcome sentence not found word for word in the evaluation")
     if model_level != level:
         flags.append(f"model said {label(model_level)}, code set {label(level)}")
     ev.update({"level": level, "code_level": code_level, "model_level": model_level,
