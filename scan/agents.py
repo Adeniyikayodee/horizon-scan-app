@@ -617,10 +617,68 @@ async def themes(ctx: dict[str, str], rows: list[dict[str, Any]], hunches: str) 
     return [spec.coerce_theme(t, sp) for t in out.get("themes", [])]
 
 
-async def synthesize(ctx: dict[str, str], themes_list: list[dict[str, Any]]) -> dict[str, str]:
+async def synthesize(ctx: dict[str, str], themes_list: list[dict[str, Any]],
+                     extra: str = "") -> dict[str, Any]:
+    """The memo or brief. A profile with brief_checks then runs the plain-language
+    checks in code and, when any fail, gives the Editor one rewrite pass. The rewrite
+    is kept only when it leaves fewer issues and loses no section."""
+    out = await _synthesize_draft(ctx, themes_list, extra)
+    sp = config.active_spec()
+    checks = sp.get("brief_checks")
+    if not checks:
+        return out
+    from . import plain
+    issues = plain.check(out.get("memo_markdown", ""), checks)
+    if issues:
+        print(f"  synth: {len(issues)} plain-language issue(s), one rewrite pass")
+        try:
+            fixed = await rewrite_brief(ctx, out.get("memo_markdown", ""), issues)
+            new_issues = plain.check(fixed, checks)
+            lost = spec.memo_shortfall(fixed, sp)
+            if len(new_issues) < len(issues) and "missing section" not in lost:
+                out["memo_markdown"], issues = fixed, new_issues
+        except Exception as e:
+            print(f"  synth: rewrite failed ({str(e)[:80]}), keeping the draft")
+    out["plain_issues"] = issues
+    return out
+
+
+EDITOR_I = """
+You are the Editor. Rewrite the brief below so that every note in the list is fixed.
+
+Hold to these rules:
+- Keep every fact, figure, program name, organization, evidence level, and link
+  exactly as it is. Add nothing new.
+- Keep the same headings, word for word, in the same order.
+- Write so a 15-year-old can follow it: short sentences, everyday words, one idea per
+  sentence.
+- State things directly. Never set one idea up against another, so no "not X but Y",
+  "not only ... but also", "rather than", "instead of", or "more than just".
+- No em dashes or en dashes. Use commas, or write two sentences.
+- Spell out each acronym the first time, as Full Name (ACRONYM).
+- Spell out the numbers zero to nine, use digits for 10 and up, and write "percent".
+- US English, active voice, and the serial comma.
+- Stay close to the target length.
+Call record once, with the rewritten brief as memo_markdown and the scorecard intro unchanged.
+"""
+
+
+async def rewrite_brief(ctx: dict[str, str], markdown: str, issues: list[str]) -> str:
+    user = ("Notes to fix:\n" + "\n".join(f"- {i}" for i in issues)
+            + "\n\nBrief to rewrite:\n\n" + markdown)
+    out = await structured_call(model=config.MODEL_OPUS, frame=_frame(ctx, ["output_spec"], _i("editor", EDITOR_I)),
+                                user=user, schema=schemas.SYNTH_SCHEMA, max_tokens=16000,
+                                effort="high", tier="strong")
+    return _s(out.get("memo_markdown")) or markdown
+
+
+async def _synthesize_draft(ctx: dict[str, str], themes_list: list[dict[str, Any]],
+                            extra: str = "") -> dict[str, Any]:
     import json
     sp = config.active_spec()
     user = "Themes and scores:\n" + json.dumps(themes_list, ensure_ascii=False, indent=2)
+    if extra:
+        user += "\n\n" + extra
     frame = _frame(ctx, ["mission", "output_spec", "exemplar"], synth_instructions(sp))
     # The memo must arrive whole. Two ways it does not: the model runs out of output
     # room mid-sentence, or it simply writes short. Both are retried with headroom,

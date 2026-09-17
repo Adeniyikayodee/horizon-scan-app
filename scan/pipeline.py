@@ -784,10 +784,20 @@ async def run_stage2() -> None:
         for m in t.get("members", []):
             r = detail_by_name.get(m)
             if r:
-                md.append({"name": m, "org": r.get("org", ""), "year": r.get("year", ""),
-                           "what": r.get("what", ""), "evidence": r.get("evidence", ""),
-                           "uptake": r.get("uptake", ""), "overall": r.get("overall", ""),
-                           "source": r.get("url", "")})
+                d = {"name": m, "org": r.get("org", ""), "year": r.get("year", ""),
+                     "what": r.get("what", ""), "evidence": r.get("evidence", ""),
+                     "uptake": r.get("uptake", ""), "overall": r.get("overall", ""),
+                     "source": r.get("url", "")}
+                if r.get("evidence_record"):
+                    rec = r["evidence_record"]
+                    best = rec.get("best") or {}
+                    d.update({"posture": r.get("posture", ""), "evidence_level": rec.get("label", ""),
+                              "effect": best.get("effect_summary", ""), "evaluation": best.get("title", ""),
+                              "evaluation_link": best.get("url", ""),
+                              "cost_per_outcome": best.get("cost_per_outcome", ""),
+                              "funders": rec.get("funders", [])})
+                    d.update({k: r.get(k, "") for k in spec.reader_fields(config.active_spec())})
+                md.append(d)
         t["member_details"] = md
 
     top2 = _apply_top2(themes)   # the two cleanest areas to enter, or fewer, honestly
@@ -814,7 +824,20 @@ async def run_stage2() -> None:
             dead = bool(cu) and not config.DRY_RUN and await asyncio.to_thread(sources.link_dead, cu)
             t["corroboration"] = _reject_dead_corroboration(corr, dead)
 
-    synth = await agents.synthesize(ctx, themes)
+    deliv = config.active_spec().get("deliverables")
+    extra = ""
+    if funder_map:
+        top = [{"funder": f.get("name", ""), "fit": (f.get("fit") or {}).get("score"),
+                "themes": (f.get("fit") or {}).get("themes_matched"),
+                "countries": (f.get("fit") or {}).get("countries_matched"),
+                "strategy": (f.get("strategy") or {}).get("value"),
+                "eligibility": (f.get("eligibility") or {}).get("value"),
+                "calls": f.get("calls", [])} for f in funder_map if not f.get("error")][:15]
+        extra = "Funders ranked by fit, from their own pages:\n" + json.dumps(top, ensure_ascii=False, indent=2)
+    synth = await (agents.synthesize(ctx, themes, extra) if extra else agents.synthesize(ctx, themes))
+    if deliv:
+        await _write_profile_deliverables(deliv, synth, kept, themes, funder_map or [], top2)
+        return
 
     # The policy check runs BEFORE the first write, and never raises. By this point
     # the run is paid for, so a banned phrase becomes a note beside the deliverables
@@ -838,6 +861,28 @@ async def run_stage2() -> None:
     print(f"stage 2 done: {len(themes)} themes -> out/. "
           + (f"Cleanest new areas: {', '.join(top2)}" if top2
              else "No theme carries the enter posture, nothing is recommended for entry."))
+
+
+async def _write_profile_deliverables(deliv: dict[str, str], synth: dict[str, Any], kept, themes,
+                                      funder_map, lead: list[str]) -> None:
+    """A profile's own deliverables: the brief (markdown and Word) and the options
+    workbook with the funder map. Written whole, with every policy or style note left
+    beside them, never instead of them."""
+    brief, brief_hits = guardrail.finalize("brief", synth.get("memo_markdown", ""))
+    name = deliv.get("brief", "brief")
+    (config.OUT_DIR / f"{name}.md").write_text(brief.rstrip() + "\n", encoding="utf-8")
+    docx_out.write_memo_docx(brief, config.OUT_DIR / f"{name}.docx")
+    opath, cell_hits = io_xlsx.write_options(kept, themes, funder_map,
+                                             config.OUT_DIR / f"{deliv.get('options', 'options')}.xlsx")
+    notes = guardrail.title_notes(brief) + list(synth.get("plain_issues") or [])
+    vpath = io_xlsx.write_policy_violations(
+        [(f"{name}.md", brief, brief_hits), (opath.name, "", cell_hits), (f"{name}.md, plain language and house style", brief, notes)])
+    if vpath:
+        print(f"  ! {len(brief_hits) + len(cell_hits) + len(notes)} note(s) left for the analyst, see {vpath}")
+    if not config.DRY_RUN:
+        print(f"  spend: {client.usage_line()}")
+    print(f"stage 2 done: {len(themes)} themes, {len(kept)} options, {len(funder_map)} funders -> {config.OUT_DIR}. "
+          + (f"Lead themes: {', '.join(lead)}" if lead else "No theme carries a lead posture."))
 
 
 def prune_runs(keep: int = 20, dry: bool = False) -> list[str]:

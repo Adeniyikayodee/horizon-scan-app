@@ -427,3 +427,94 @@ def write_memo(markdown: str) -> Path:
     path = config.OUT_DIR / "synthesis_memo.md"
     path.write_text(markdown.rstrip() + "\n", encoding="utf-8")
     return path
+
+
+# --- a profile's options workbook ------------------------------------------------
+OPTION_COLUMNS = [
+    "Theme", "Option", "Organization", "Design", "Target group", "Where it runs",
+    "Delivery partner", "Evidence level", "Evaluation", "Evaluation link", "Evaluation year",
+    "Outcome and effect", "Cost per outcome", "Inclusion reach", "Transfer note", "ACET's role",
+    "Funders", "Posture", "Relation", "Verification", "Program source",
+]
+FUNDER_COLUMNS = [
+    "Funder", "Type", "Why it is here", "Fit score", "Themes matched", "Priority countries matched",
+    "Strategy", "Strategy period", "Instruments", "Typical size", "ACET eligible", "Open calls",
+    "Strategy source", "Not confirmed",
+]
+
+
+def _cell(v: Any) -> Any:
+    if isinstance(v, (list, tuple)):
+        v = "; ".join(str(x) for x in v if str(x).strip())
+    return "" if v is None else v
+
+
+def write_options(rows: list[dict[str, Any]], themes: list[dict[str, Any]], funder_map: list[dict[str, Any]],
+                  path: Path) -> tuple[Path, list[str]]:
+    """The program design options list and the funder map, one workbook. Every text
+    cell goes through the same scrub as the brief, and anything the scrub cannot fix
+    is returned for the policy notes."""
+    member_theme = {m: t for t in themes for m in t.get("members", [])}
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Options"
+    ws.append(OPTION_COLUMNS)
+    order = {"adopt": 0, "adapt": 1, "watch": 2}
+    hits: list[str] = []
+
+    def clean(values: list[Any]) -> list[Any]:
+        out = []
+        for v in values:
+            v = _cell(v)
+            if isinstance(v, str):
+                v, h = guardrail.finalize("cell", v)
+                hits.extend(h)
+            out.append(v)
+        return out
+
+    def key(r):
+        t = member_theme.get(r.get("name", ""), {})
+        rec = r.get("evidence_record") or {}
+        return (t.get("name", "~"), order.get(r.get("posture", ""), 3), -int(rec.get("level", 1)), r.get("name", ""))
+
+    for r in sorted(rows, key=key):
+        t = member_theme.get(r.get("name", ""), {})
+        rec = r.get("evidence_record") or {}
+        best = rec.get("best") or {}
+        s = r.get("score") or {}
+        cost = best.get("cost_per_outcome") or ""
+        if not cost or cost == "not found":
+            cost = r.get("cost_data") or "not found"
+        ws.append(clean([
+            t.get("name", ""), r.get("name", ""), r.get("org", ""), r.get("design_features") or r.get("what", ""),
+            r.get("target_group", ""), r.get("countries", ""), r.get("delivery_partner", ""),
+            rec.get("label", ""), best.get("title", "") or rec.get("note", ""), best.get("url", ""),
+            best.get("year", ""), best.get("effect_summary", ""), cost,
+            r.get("inclusion") or s.get("reason_inclusion", ""), s.get("reason_transferability", ""),
+            s.get("reason_acet_role", ""),
+            list(dict.fromkeys((rec.get("funders") or []) + [x.strip() for x in str(r.get("funders", "")).split(";") if x.strip()])),
+            r.get("posture", ""), t.get("tag", ""), (r.get("verification") or {}).get("status", ""), r.get("url", ""),
+        ]))
+
+    fs = wb.create_sheet("Funder map")
+    fs.append(FUNDER_COLUMNS)
+    for f in funder_map:
+        if f.get("error"):
+            fs.append(clean([f.get("name", ""), f.get("type", ""), f.get("source", ""), "", "", "", "", "",
+                             "", "", "", "", "", "could not be read"]))
+            continue
+        fit = f.get("fit") or {}
+        st = f.get("strategy") or {}
+        calls = [", ".join(x for x in (c.get("title", ""), c.get("deadline", ""), c.get("url", "")) if x)
+                 for c in f.get("calls") or []]
+        fs.append(clean([
+            f.get("name", ""), f.get("type", ""), f.get("source", ""), fit.get("score", ""),
+            fit.get("themes_matched", []), fit.get("countries_matched", []), st.get("value", ""),
+            st.get("period", "") if st.get("grounded") is True else "",
+            (f.get("instruments") or {}).get("value", []), (f.get("size") or {}).get("value", ""),
+            (f.get("eligibility") or {}).get("value", ""), calls, st.get("url", "") if st.get("grounded") is True else "",
+            f.get("dropped_fields", []),
+        ]))
+    _stamp(wb)
+    wb.save(path)
+    return path, list(dict.fromkeys(hits))

@@ -371,6 +371,9 @@ def memo_shortfall(markdown: str, spec: dict) -> str:
     problems = []
     if words < floor:
         problems.append(f"{words:,} words against a floor of {floor:,}")
+    ceiling = m.get("max_words")
+    if ceiling and words > int(ceiling):
+        problems.append(f"{words:,} words against a ceiling of {int(ceiling):,}")
     if missing:
         problems.append("missing section(s): " + ", ".join(missing))
     return "; ".join(problems)
