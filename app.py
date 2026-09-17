@@ -551,12 +551,9 @@ with st.sidebar:
     st.markdown('<div class="hs-eyebrow" style="margin-top:2px">Progress</div>', unsafe_allow_html=True)
     stepper(st.session_state.step)
     st.markdown('<div style="height:1px;background:var(--line);margin:14px 0"></div>', unsafe_allow_html=True)
-    ENGINES = {"Claude login, Opus 5 (this computer only)": "claude-cli", "OpenRouter": "openrouter"}
+    ENGINES = {"Model 1": "claude-cli", "Model 2": "openrouter"}
     engine = st.radio("Engine", list(ENGINES), key="engine_pick",
-                      help="Claude login runs every step on Opus 5 through Claude Code on this computer, "
-                           "counted against your plan's usage limits. It is for your own runs; a version "
-                           "the team uses online needs an API key. OpenRouter uses the OpenRouter key and "
-                           "its balance.")
+                      help="Model 1 runs on this computer only. Model 2 uses the online account and its balance.")
     config.PROVIDER = ENGINES[engine]
     config.OR_MODEL = DEFAULT_MODEL
     SCANS = {"Horizon scan": None, "YES program scan": "yes"}
@@ -588,7 +585,7 @@ with st.sidebar:
              "any actor (civil society, foundations, and the private sector too), noting for each how "
              "it could transfer to an African context.")
     config.SCAN_MODE = "global" if scope == "Global" else "africa"
-    if not config.OPENROUTER_API_KEY:
+    if config.PROVIDER == "openrouter" and not config.OPENROUTER_API_KEY:
         st.error("No API key on the server. Add OPENROUTER_API_KEY to .streamlit/secrets.toml.")
     if st.button("Start over"):
         for k in ("run_id", "step", "generated"):
@@ -759,8 +756,8 @@ if step >= 3:
         if errs:
             credit = any("402" in e or "credit" in e.lower() for e in errs)
             st.error(f"This run did not finish: {len(errs)} call(s) failed. "
-                     + ("The model account ran out of credit. Add credit, or switch the engine in the sidebar "
-                        "to the Claude login, then run again. Organizations that errored are scanned again. "
+                     + ("The Model 2 account ran out of credit. Add credit, or switch the engine in the sidebar "
+                        "to Model 1, then run again. Organizations that errored are scanned again. "
                         if credit else "Run again, and organizations that errored are scanned again. ")
                      + "First error: " + errs[0][:200])
         else:
