@@ -271,3 +271,26 @@ def test_claude_cli_semaphore_survives_new_event_loops(monkeypatch):
         loop = asyncio.new_event_loop()
         assert loop.run_until_complete(client.structured_call(model="m", frame="f", user="u", schema={})) == {"ok": 1}
         loop.close()
+
+
+def test_cli_routing_by_stage(monkeypatch):
+    from scan import client, config, spec
+    monkeypatch.setattr(config, "CLI_ROUTE_MODE", "tiered")
+    monkeypatch.setattr(config, "SPEC", None)
+    assert client.cli_route("evidence_find") == ("claude-opus-5", "high")
+    assert client.cli_route("reader") == ("claude-sonnet-5", "medium")
+    assert client.cli_route("auditor")[0].startswith("claude-haiku")
+    # an unlabelled step falls back to the single model and the call's own effort
+    assert client.cli_route("", "low") == (config.CLI_MODEL, "low")
+    # a profile overrides any row
+    monkeypatch.setattr(config, "SPEC", {**spec.DEFAULT_SPEC, "models": {"reader": {"model": "m", "effort": "max"}}})
+    assert client.cli_route("reader") == ("m", "max")
+    # one-model mode reproduces the first Opus 5 pilot, for comparison
+    monkeypatch.setattr(config, "CLI_ROUTE_MODE", "one")
+    assert client.cli_route("evidence_find") == (config.CLI_MODEL, "medium")
+
+
+def test_cli_args_carry_model_and_effort():
+    from scan import client
+    a = client._cli_args({"type": "object"}, True, "/tmp/p.md", "claude-sonnet-5", "low")
+    assert a[a.index("--model") + 1] == "claude-sonnet-5" and a[a.index("--effort") + 1] == "low"

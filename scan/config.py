@@ -68,6 +68,30 @@ BUDGET_USD = float(os.environ.get("SCAN_BUDGET_USD", "0"))
 CLI_BIN = os.environ.get("CLAUDE_CLI_BIN", "claude")
 CLI_MODEL = os.environ.get("CLI_MODEL", "claude-opus-5")
 CLI_CONCURRENCY = int(os.environ.get("CLI_CONCURRENCY", "3"))
+
+# Which model runs which step, and at what effort. The heavy judgment steps run on the
+# strongest model, the reading steps on the middle one, and the short mechanical checks
+# on the fastest. A profile can override any row with its own "models" block.
+CLI_ROUTING: dict[str, dict[str, str]] = {
+    "evidence_find": {"model": "claude-opus-5", "effort": "high"},
+    "themer": {"model": "claude-opus-5", "effort": "high"},
+    "synthesizer": {"model": "claude-opus-5", "effort": "high"},
+    "editor": {"model": "claude-opus-5", "effort": "high"},
+    "reader": {"model": "claude-sonnet-5", "effort": "medium"},
+    "evidence_read": {"model": "claude-sonnet-5", "effort": "medium"},
+    "verifier": {"model": "claude-sonnet-5", "effort": "medium"},
+    "funder": {"model": "claude-sonnet-5", "effort": "medium"},
+    "corroborate": {"model": "claude-sonnet-5", "effort": "medium"},
+    "scout": {"model": "claude-sonnet-5", "effort": "low"},
+    "librarian": {"model": "claude-sonnet-5", "effort": "low"},
+    "discover": {"model": "claude-sonnet-5", "effort": "low"},
+    "scorer": {"model": "claude-haiku-4-5-20251001", "effort": "low"},
+    "auditor": {"model": "claude-haiku-4-5-20251001", "effort": "low"},
+    "hunches": {"model": "claude-haiku-4-5-20251001", "effort": "low"},
+    "frame_orgs": {"model": "claude-haiku-4-5-20251001", "effort": "low"},
+}
+# "one" sends every step to CLI_MODEL, which is how the pilot ran, for comparison.
+CLI_ROUTE_MODE = os.environ.get("CLI_ROUTE_MODE", "tiered")
 CLI_TIMEOUT = float(os.environ.get("CLI_TIMEOUT", "900"))
 
 # Concurrency for the per-org fan-out.

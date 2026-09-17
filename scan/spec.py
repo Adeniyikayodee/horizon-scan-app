@@ -647,3 +647,8 @@ def funder_config(sp: dict) -> dict | None:
     if not cfg:
         return None
     return {**cfg, "theme_names": [t["name"] for t in sp.get("themes_seed") or []]}
+
+
+def cli_models(sp: dict) -> dict[str, dict[str, str]]:
+    """A profile's per-step model routing, which overrides the engine's table."""
+    return dict(sp.get("models") or {})

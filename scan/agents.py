@@ -352,7 +352,7 @@ async def librarian(ctx: dict[str, str], org: dict[str, str], hint: str = "") ->
         user += "\n\n" + hint
     out = await structured_call(
         model=config.MODEL_HAIKU, frame=_frame(ctx, ["mission", "scope"], _i("librarian", LIBRARIAN_I)),
-        user=user, schema=schemas.LIBRARIAN_SCHEMA, web=True, effort="medium",
+        user=user, schema=schemas.LIBRARIAN_SCHEMA, web=True, effort="medium", stage="librarian",
     )
     return out.get("reports", [])
 
@@ -365,7 +365,7 @@ async def scout(ctx: dict[str, str], org: dict[str, str], hint: str = "") -> dic
         user += "\n\n" + hint
     out = await structured_call(
         model=config.MODEL_HAIKU, frame=_frame(ctx, ["mission", "scope"], _i("scout", SCOUT_I)),
-        user=user, schema=schemas.SCOUT_SCHEMA, web=True, effort="medium",
+        user=user, schema=schemas.SCOUT_SCHEMA, web=True, effort="medium", stage="scout",
     )
     cands = []
     for c in out.get("candidates", []):
@@ -406,11 +406,11 @@ async def read(ctx: dict[str, str], cand: dict[str, str]) -> dict[str, Any]:
         # strong model here (it reads a fetched document, no web plugin involved)
         out = await structured_call(model=config.MODEL_SONNET, frame=frame, user=user,
                                     schema=reader_schema, web=False, effort="medium",
-                                    tier="strong")
+                                    tier="strong", stage="reader")
     else:  # fetch failed (bot-protected, binary), fall back to search on the cheap model
         user = f"Candidate: {cand['name']}\nWhat: {cand.get('one_liner','')}\nLink: {url}"
         out = await structured_call(model=config.MODEL_HAIKU, frame=frame, user=user,
-                                    schema=reader_schema, web=True, effort="medium")
+                                    schema=reader_schema, web=True, effort="medium", stage="reader")
     r = schemas.Reading(**_coerce_reading(out)).model_dump()
     for k in spec.reader_fields(config.active_spec()):
         r[k] = _s(out.get(k))
@@ -430,7 +430,7 @@ async def score(ctx: dict[str, str], approach: dict[str, Any]) -> dict[str, Any]
     sp = config.active_spec()
     out = await structured_call(
         model=config.MODEL_SONNET, frame=_frame(ctx, ["mission", "scope", "scoring"], _i("scorer", SCORER_I)),
-        user=user, schema=spec.score_schema(sp), effort="low", tier="strong",
+        user=user, schema=spec.score_schema(sp), effort="low", tier="strong", stage="scorer",
     )
     dumped, coerced = spec.coerce_score(out, sp)
     dumped["_coerced"] = coerced
@@ -459,7 +459,7 @@ async def verify(ctx: dict[str, str], approach: dict[str, Any]) -> dict[str, Any
     out = await structured_call(
         model=config.MODEL_SONNET, frame=_frame(ctx, ["mission"], _i("verifier", VERIFIER_I)),
         user=user, schema=schemas.VERIFY_SCHEMA, web=(not doc), effort="medium",
-        tier="strong",
+        tier="strong", stage="verifier",
     )
     dumped = schemas.Verdict(**_coerce_verdict(out)).model_dump()
     if doc and url:
@@ -494,7 +494,7 @@ async def audit(ctx: dict[str, str], row: dict[str, Any]) -> dict[str, Any]:
             f"confirming quote: {v.get('confirming_quote','')}\nSource: {row.get('url','')}")
     out = await structured_call(
         model=config.MODEL_SONNET, frame=_frame(ctx, ["mission", "scoring"], _i("auditor", AUDIT_I)),
-        user=user, schema=schemas.AUDIT_SCHEMA, effort="low", tier="strong",
+        user=user, schema=schemas.AUDIT_SCHEMA, effort="low", tier="strong", stage="auditor",
     )
     dumped = schemas.Audit(**_coerce_audit(out)).model_dump()
     dumped["_coerced"] = _defaulted(out, {"score_matches_evidence": _CONSIST, "verdict": {"pass", "flag"}})
@@ -533,7 +533,7 @@ async def corroborate(ctx: dict[str, str], claim: str) -> dict[str, Any]:
     out = await structured_call(
         model=config.MODEL_SONNET, frame=_frame(ctx, ["mission"], _i("corroborate", CORROBORATE_I)),
         user=f"Claim to corroborate on a second, independent source:\n{claim}",
-        schema=CORROBORATE_SCHEMA, web=True, effort="medium",
+        schema=CORROBORATE_SCHEMA, web=True, effort="medium", stage="corroborate",
     )
     return {"corroborated": bool(out.get("corroborated")), "source": _s(out.get("source")),
             "url": _s(out.get("url")), "quote": _s(out.get("quote")), "note": _s(out.get("note"))}
@@ -544,7 +544,7 @@ async def seed_hunches(ctx: dict[str, str], titles: list[str]) -> list[dict[str,
     out = await structured_call(
         model=config.MODEL_SONNET,
         frame=_frame(ctx, ["mission"], "List a few cross-org patterns worth a human second look. Seed only, label each as a hunch."),
-        user=user, schema=schemas.HUNCH_SCHEMA, effort="low", tier="strong",
+        user=user, schema=schemas.HUNCH_SCHEMA, effort="low", tier="strong", stage="hunches",
     )
     return out.get("patterns", [])
 
@@ -580,7 +580,7 @@ async def discover(ctx: dict[str, str], n: int = 25) -> list[dict[str, Any]]:
             f"Propose up to {n} organizations whose recent work fits this question and the lenses.")
     out = await structured_call(
         model=config.MODEL_SONNET, frame=_frame(ctx, ["mission", "scope"], _i("discover", DISCOVER_I)),
-        user=user, schema=spec.DISCOVER_SCHEMA, web=True, effort="medium",
+        user=user, schema=spec.DISCOVER_SCHEMA, web=True, effort="medium", stage="discover",
     )
     return out.get("organizations", [])
 
@@ -604,7 +604,7 @@ async def frame_orgs(ctx: dict[str, str], names: list[str]) -> list[dict[str, An
     user = "Organizations to frame:\n" + "\n".join(f"- {n}" for n in names)
     out = await structured_call(
         model=config.MODEL_HAIKU, frame=_frame(ctx, ["mission", "scope"], _i("frame_orgs", FRAME_ORGS_I)),
-        user=user, schema=spec.DISCOVER_SCHEMA, web=False, effort="low",
+        user=user, schema=spec.DISCOVER_SCHEMA, web=False, effort="low", stage="frame_orgs",
     )
     return out.get("organizations", [])
 
@@ -616,7 +616,7 @@ async def themes(ctx: dict[str, str], rows: list[dict[str, Any]], hunches: str) 
     out = await structured_call(
         model=config.MODEL_OPUS,
         frame=_frame(ctx, ["mission", "scope", "scoring", "themes", "exemplar"], _i("themer", THEMER_I)),
-        user=user, schema=spec.themes_schema(sp), max_tokens=8192, effort="high", tier="strong",
+        user=user, schema=spec.themes_schema(sp), max_tokens=8192, effort="high", tier="strong", stage="themer",
     )
     return [spec.coerce_theme(t, sp) for t in out.get("themes", [])]
 
@@ -673,7 +673,7 @@ async def rewrite_brief(ctx: dict[str, str], markdown: str, issues: list[str]) -
             + "\n\nBrief to rewrite:\n\n" + markdown)
     out = await structured_call(model=config.MODEL_OPUS, frame=_frame(ctx, ["output_spec"], _i("editor", EDITOR_I)),
                                 user=user, schema=schemas.SYNTH_SCHEMA, max_tokens=16000,
-                                effort="high", tier="strong")
+                                effort="high", tier="strong", stage="editor")
     return _s(out.get("memo_markdown")) or markdown
 
 
@@ -694,7 +694,7 @@ async def _synthesize_draft(ctx: dict[str, str], themes_list: list[dict[str, Any
         try:
             out = await structured_call(model=config.MODEL_OPUS, frame=frame, user=user,
                                         schema=schemas.SYNTH_SCHEMA, max_tokens=budget,
-                                        effort="high", tier="strong")
+                                        effort="high", tier="strong", stage="synthesizer")
         except TruncatedOutput as e:
             print(f"  synth: {e}, retrying with more headroom")
             continue
@@ -836,7 +836,7 @@ async def find_evidence(ctx: dict[str, str], org: dict[str, str], appr: dict[str
         user += "\n\n" + hint
     out = await structured_call(
         model=config.MODEL_HAIKU, frame=_frame(ctx, ["mission"], instr),
-        user=user, schema=EVIDENCE_FIND_SCHEMA, web=True, effort="medium",
+        user=user, schema=EVIDENCE_FIND_SCHEMA, web=True, effort="medium", stage="evidence_find",
     )
     evs = []
     for e in _list(out.get("evaluations")):
@@ -859,7 +859,7 @@ async def read_evidence(ctx: dict[str, str], appr: dict[str, Any], ev: dict[str,
         user = head
     out = await structured_call(
         model=config.MODEL_SONNET, frame=_frame(ctx, ["mission"], _i("evidence_read", EVIDENCE_READ_I)),
-        user=user, schema=EVIDENCE_READ_SCHEMA, web=not doc, effort="medium", tier="strong",
+        user=user, schema=EVIDENCE_READ_SCHEMA, web=not doc, effort="medium", tier="strong", stage="evidence_read",
     )
     return {
         "program_matches": _b(out.get("program_matches")),
@@ -938,7 +938,7 @@ async def funder(ctx: dict[str, str], f: dict[str, Any], cfg: dict[str, Any]) ->
     out = await structured_call(
         model=config.MODEL_SONNET, frame=_frame(ctx, ["mission"], instr),
         user=f"Funder: {f['name']}\nType: {f.get('type','')}", schema=funder_schema(names),
-        web=True, effort="medium", max_tokens=6000,
+        web=True, effort="medium", max_tokens=6000, stage="funder",
     )
     rec: dict[str, Any] = {}
     for k in ("strategy", "themes", "countries", "instruments", "size", "eligibility"):
