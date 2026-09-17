@@ -586,7 +586,7 @@ with st.sidebar:
              "it could transfer to an African context.")
     config.SCAN_MODE = "global" if scope == "Global" else "africa"
     if config.PROVIDER == "openrouter" and not config.OPENROUTER_API_KEY:
-        st.error("No API key on the server. Add OPENROUTER_API_KEY to .streamlit/secrets.toml.")
+        st.error("Model 2 has no key on this server. Add it to .streamlit/secrets.toml.")
     if st.button("Start over"):
         for k in ("run_id", "step", "generated"):
             st.session_state.pop(k, None)
