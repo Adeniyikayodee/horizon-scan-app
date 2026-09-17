@@ -821,11 +821,13 @@ EVIDENCE_READ_SCHEMA = {
 
 
 async def find_evidence(ctx: dict[str, str], org: dict[str, str], appr: dict[str, Any],
-                        search_first: list[str]) -> list[dict[str, Any]]:
+                        search_first: list[str], hint: str = "") -> list[dict[str, Any]]:
     instr = _i("evidence_find", EVIDENCE_FIND_I).replace("{search_first}", ", ".join(search_first))
     user = (f"Program: {appr.get('name','')}\nWhat it does: {appr.get('what','')}\n"
             f"Organization that runs it: {org.get('name','')}\n"
             f"Where it runs: {appr.get('countries','') or org.get('region','')}")
+    if hint:
+        user += "\n\n" + hint
     out = await structured_call(
         model=config.MODEL_HAIKU, frame=_frame(ctx, ["mission"], instr),
         user=user, schema=EVIDENCE_FIND_SCHEMA, web=True, effort="medium",

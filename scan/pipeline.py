@@ -290,12 +290,13 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
                     continue
                 appr["evidence_record"] = rec
                 _set_evidence_mark(appr, rec, evcfg)
-                if ladder.entry_allowed(rec["level"], rec["african"], evcfg.get("geography") or {}):
-                    passed.append(appr)
-                else:
+                if not ladder.entry_allowed(rec["level"], rec["african"], evcfg.get("geography") or {}):
+                    # below the bar stays visible, unticked, so a reviewer can see the
+                    # evidence tried and override the level; it is never silently lost
                     where = "outside Africa" if rec["african"] is False else "in Africa"
-                    dropped.append({"org": org["name"], "name": appr["name"], "stage": "below the evidence bar",
-                                    "reason": f"{rec['label']} for a program {where}, below the entry bar"})
+                    appr["keep_default"] = "N"
+                    rec["flags"] = [f"below the evidence bar: {rec['label']} for a program {where}"] + rec["flags"]
+                passed.append(appr)
                 await tick()
             scored = passed
 
@@ -325,6 +326,7 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
                 "score": appr.get("score", {}), "overall": appr.get("overall", ""),
                 "verification": vd, "queries": queries,
                 **({"evidence_record": appr["evidence_record"]} if "evidence_record" in appr else {}),
+                **({"keep_default": appr["keep_default"]} if "keep_default" in appr else {}),
                 **{k: appr.get(k, "") for k in spec.reader_fields(config.active_spec())},
             })
             await tick()
@@ -447,16 +449,28 @@ async def _evidence_for(ctx, org: dict[str, str], appr: dict[str, Any], evcfg: d
     evaluation at E3 or above. The program's own document is always read as one more,
     self-published, candidate, so a program with only its own results can still show
     a measured change (E2)."""
-    found = await agents.find_evidence(ctx, org, appr, evcfg.get("search_first") or [])
     lo, hi = config.window("evaluation")
-    external = []
-    for e in found:
-        yr = _first_year(e.get("year", ""), e.get("title", ""))
-        if yr is not None and not (lo <= yr <= hi):
-            continue
-        if e.get("url") == appr.get("url"):
-            continue
-        external.append(e)
+
+    def usable(found: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        out = []
+        for e in found:
+            yr = _first_year(e.get("year", ""), e.get("title", ""))
+            if yr is not None and not (lo <= yr <= hi):
+                continue
+            if e.get("url") == appr.get("url"):
+                continue
+            out.append(e)
+        return out
+
+    external = usable(await agents.find_evidence(ctx, org, appr, evcfg.get("search_first") or []))
+    if not external:
+        # search results vary run to run, and one empty search must not decide that a
+        # program has no evidence, so a thin first pass gets one broader retry
+        external = usable(await agents.find_evidence(ctx, org, appr, evcfg.get("search_first") or [], hint=(
+            "The first search found no evaluation. Search again more widely: the program's name with "
+            "\"randomized\", \"impact evaluation\", and \"evaluation\"; the organization's name with "
+            "\"impact evaluation\"; the program's name in its own language; and working paper series such "
+            "as NBER, IZA, the World Bank Policy Research Working Papers, and 3ie reports.")))
     external = external[: int(evcfg.get("max_evaluations", 2))]
     if external and not config.DRY_RUN:
         dead = await asyncio.gather(*[asyncio.to_thread(sources.link_dead, e["url"]) for e in external])

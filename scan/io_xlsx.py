@@ -199,7 +199,7 @@ def write_longlist(rows: list[dict[str, Any]]) -> Path:
         r.setdefault("rid", f"R{i:04d}")                 # stable id for the stage-2 rejoin
         s = r.get("score", {}) or {}
         v = r.get("verification", {}) or {}
-        row = [r["rid"], "Y", r.get("org", ""), r.get("name", ""), r.get("band", ""),
+        row = [r["rid"], r.get("keep_default", "Y"), r.get("org", ""), r.get("name", ""), r.get("band", ""),
                r.get("what", ""), r.get("year", "")]
         row += [s.get(c["key"], "") for c in crit]
         row += [s.get("overall", ""), v.get("status", ""),

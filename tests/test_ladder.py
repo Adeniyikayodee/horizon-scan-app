@@ -322,3 +322,33 @@ def test_orgs_with_errors_are_scanned_again():
     assert not pipeline._scanned_cleanly({"error": "boom", "dropped": []})
     assert not pipeline._scanned_cleanly({"dropped": [{"stage": "error", "reason": "402"}]})
     assert pipeline._scanned_cleanly({"dropped": [{"stage": "below the evidence bar"}]})
+
+
+
+def test_empty_first_search_gets_a_broader_retry(graded_profile, monkeypatch):
+    calls = []
+
+    async def find(ctx, org, appr, sf, hint=""):
+        calls.append(hint)
+        if not hint:
+            return []
+        return [{"title": "Impact evaluation", "year": "2020", "evaluator": "Uni", "type": "impact evaluation",
+                 "url": "https://example.org/eval.pdf"}]
+    monkeypatch.setattr(pipeline.agents, "find_evidence", find)
+    rec = asyncio.run(pipeline._evidence_for({}, {"name": "O", "region": "Africa"},
+                                             {"name": "P", "what": "w", "url": "", "year": "2024"}, EVCFG))
+    assert len(calls) == 2 and calls[1] and rec["evaluations"]
+
+
+def test_below_the_bar_stays_in_the_longlist_unticked(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "REVIEW_DIR", tmp_path)
+    monkeypatch.setattr(config, "WORK_DIR", tmp_path)
+    monkeypatch.setattr(config, "SPEC", {**spec.DEFAULT_SPEC, "evidence": EVCFG})
+    io_xlsx.write_longlist([{"name": "P", "org": "O", "verification": {}, "keep_default": "N",
+                             "evidence_record": {"label": "E1", "flags": ["below the evidence bar: E1"]}}])
+    from openpyxl import load_workbook
+    ws = load_workbook(tmp_path / "longlist.xlsx").active
+    header = [c.value for c in ws[1]]
+    row = [c.value for c in ws[2]]
+    assert row[header.index("keep")] == "N"
+    assert "below the evidence bar" in row[header.index("evidence flags")]
