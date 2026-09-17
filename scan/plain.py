@@ -86,6 +86,17 @@ def avg_sentence_length(text: str) -> float:
     return round(len(words(text)) / len(sents), 1) if sents else 0.0
 
 
+def short_sentence_hits(text: str, min_words: int) -> list[str]:
+    """Choppy writing: a sentence of fewer than min_words words that should be joined
+    to its neighbor with a comma or a semicolon."""
+    hits = []
+    for sent in sentences(text):
+        n = len(words(sent))
+        if 0 < n < min_words:
+            hits.append(f'short sentence ({n} words), join it to the next with a comma or semicolon: "{sent.strip()[:100]}"')
+    return hits
+
+
 def antithesis_hits(text: str) -> list[str]:
     hits = []
     for sent in sentences(text):
@@ -127,13 +138,13 @@ def house_hits(text: str) -> list[str]:
 def check(markdown: str, cfg: dict[str, Any]) -> list[str]:
     """Every plain-language and house-style issue in a brief, as notes.
 
-    cfg: {"max_grade": 9, "max_sentence_words": 20, "target_words": 2700,
-          "word_tolerance": 0.10}"""
+    cfg: {"max_grade": 9, "max_sentence_words": 20, "min_sentence_words": 7,
+          "target_words": 2700, "word_tolerance": 0.10}"""
     text = _prose(markdown)
     issues: list[str] = []
     grade = reading_grade(text)
     if grade > float(cfg.get("max_grade", 9)):
-        issues.append(f"reading grade {grade}, above {cfg.get('max_grade', 9)}: use shorter words and sentences")
+        issues.append(f"reading grade {grade}, above {cfg.get('max_grade', 9)}: use plainer, shorter words")
     avg = avg_sentence_length(text)
     if avg > float(cfg.get("max_sentence_words", 20)):
         issues.append(f"average sentence {avg} words, above {cfg.get('max_sentence_words', 20)}")
@@ -143,6 +154,8 @@ def check(markdown: str, cfg: dict[str, Any]) -> list[str]:
         tol = float(cfg.get("word_tolerance", 0.10))
         if not (target * (1 - tol) <= n <= target * (1 + tol)):
             issues.append(f"{n:,} words, the target is {target:,} within {int(tol * 100)} percent")
+    if cfg.get("min_sentence_words"):
+        issues += short_sentence_hits(text, int(cfg["min_sentence_words"]))
     issues += antithesis_hits(text)
     issues += acronym_hits(text)
     issues += house_hits(text)

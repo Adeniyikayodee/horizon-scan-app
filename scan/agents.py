@@ -654,8 +654,9 @@ Hold to these rules:
 - Keep every fact, figure, program name, organization, evidence level, and link
   exactly as it is. Add nothing new.
 - Keep the same headings, word for word, in the same order.
-- Write so a 15-year-old can follow it: short sentences, everyday words, one idea per
-  sentence.
+- Write so a 15-year-old can follow it: everyday words, in sentences of moderate
+  length that join related ideas with commas and semicolons. Never write a string of
+  short sentences of five or six words, since choppy writing reads badly; join them.
 - State things directly. Never set one idea up against another, so no "not X but Y",
   "not only ... but also", "rather than", "instead of", or "more than just".
 - No em dashes or en dashes. Use commas, or write two sentences.

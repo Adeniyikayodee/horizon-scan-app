@@ -2,7 +2,8 @@
 
 ## The brief
 
-About six pages, written so a 15-year-old can follow it. The headings and the length
+About six pages, written so a 15-year-old can follow it, in sentences that join related
+ideas with commas and semicolons, never a string of short five- or six-word sentences. The headings and the length
 are set in the profile and checked in code.
 
 ## The program design options list

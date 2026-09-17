@@ -177,8 +177,8 @@ def _synth() -> dict[str, Any]:
     filler = _FILLER
     title = "# Global scan, a wrap-up on the new areas to enter"
     if sp.get("brief_checks"):
-        filler = ("The scan found program designs that help young people find work. Some have strong proof. "
-                  "Others need more study. The team can use them to plan the next proposal. ")
+        filler = ("The scan found program designs that help young people find work, and some have strong proof "
+                  "while others still need more study; the team can use them to plan the next proposal. ")
         title = "# Program designs that help young people find work"
         ceiling = int(m.get("max_words") or floor * 1.2)
         per = max(1, int((floor + ceiling) / 2 / max(1, len(sections)) / len(filler.split())))

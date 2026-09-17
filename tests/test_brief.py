@@ -37,7 +37,7 @@ def test_plain_statements_pass(sentence):
 
 # --- reading level and style ----------------------------------------------------------
 def test_reading_grade_separates_plain_from_dense():
-    easy = "The program helps young people find jobs. It pays for training. It works in Ghana."
+    easy = "The program helps young people find jobs, pays for their training, and works in Ghana."
     hard = ("Institutionalized multistakeholder operationalization of intergenerational employability "
             "interventions necessitates comprehensive organizational capacity strengthening.")
     assert plain.reading_grade(easy) <= 9 < plain.reading_grade(hard)
@@ -165,3 +165,19 @@ def test_options_and_funder_map(tmp_path):
     assert x["Fit score"] == 9 and x["Open calls"] == "Call, December 1, 2026, https://f.org/c"
     assert dict(zip(fm[0], fm[2]))["Not confirmed"] == "could not be read"
     assert hits == []
+
+
+
+def test_choppy_short_sentences_are_caught():
+    text = "The program works. It trains young people. It runs in Ghana, Kenya, and Rwanda for young women."
+    hits = plain.short_sentence_hits(text, 7)
+    assert len(hits) == 2 and "join it to the next" in hits[0]
+    joined = ("The program works and trains young people; it runs in Ghana, Kenya, and Rwanda, "
+              "where it reaches young women in rural areas.")
+    assert plain.short_sentence_hits(joined, 7) == []
+
+
+def test_min_sentence_words_is_part_of_the_check():
+    md = "# T\n\n## What we found\n\nThe program works. It trains young people."
+    assert any("short sentence" in i for i in plain.check(md, {"min_sentence_words": 7}))
+    assert not any("short sentence" in i for i in plain.check(md, {}))
