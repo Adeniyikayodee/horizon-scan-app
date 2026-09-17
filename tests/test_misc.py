@@ -211,3 +211,40 @@ def test_spend_cap_stops_new_calls(monkeypatch):
     assert client.cost_usd()[0] >= 1.0, "web requests count toward spend"
     with pytest.raises(client.BudgetExceeded):
         asyncio.run(client.structured_call(model="m", frame="f", user="u", schema={}))
+
+
+def test_claude_cli_provider_isolates_and_parses(monkeypatch):
+    import asyncio
+    import json as _json
+    import pytest
+    from scan import client, config
+    monkeypatch.setattr(config, "DRY_RUN", False)
+    monkeypatch.setattr(config, "PROVIDER", "claude-cli")
+    monkeypatch.setattr(config, "BUDGET_USD", 0)
+    monkeypatch.setattr(client, "_CLI_SEM", None)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "should-not-pass")
+    seen = {}
+
+    class Proc:
+        returncode = 0
+
+        async def communicate(self, data):
+            seen["stdin"] = data.decode()
+            return (_json.dumps({"subtype": "success", "is_error": False, "structured_output": {"ok": True},
+                                 "usage": {"input_tokens": 5, "output_tokens": 7}, "total_cost_usd": 0.02}).encode(), b"")
+
+    async def fake_exec(*args, cwd=None, env=None, **kw):
+        seen.update(args=args, cwd=cwd, env=env)
+        seen["system"] = open(args[args.index("--system-prompt-file") + 1]).read()
+        return Proc()
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    out = asyncio.run(client.structured_call(model="m", frame="FRAME", user="USER", schema={"type": "object"}, web=True))
+    assert out == {"ok": True}
+    a = list(seen["args"])
+    assert a[a.index("--setting-sources") + 1] == "" and "--strict-mcp-config" in a and "--no-session-persistence" in a
+    assert a[a.index("--tools") + 1] == "WebSearch,WebFetch" and a[a.index("--model") + 1] == config.CLI_MODEL
+    assert "scan-cli-" in seen["cwd"] and "ANTHROPIC_API_KEY" not in seen["env"]
+    assert seen["stdin"] == "USER" and seen["system"].startswith("FRAME")
+
+    with pytest.raises(RuntimeError):
+        client._parse_cli(_json.dumps({"subtype": "error_max_turns", "is_error": True, "result": "limit"}))

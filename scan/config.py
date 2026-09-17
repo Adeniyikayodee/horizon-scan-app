@@ -62,6 +62,14 @@ WEB_CALL_USD = float(os.environ.get("WEB_CALL_USD", str(0.004 * int(os.environ.g
 # so the organizations not reached are scanned again on the next run.
 BUDGET_USD = float(os.environ.get("SCAN_BUDGET_USD", "0"))
 
+# Provider "claude-cli": every call runs through the local Claude Code command in
+# headless mode (claude -p), on the analyst's own Claude login, for runs on this
+# machine. A web app used by a team needs an API key instead.
+CLI_BIN = os.environ.get("CLAUDE_CLI_BIN", "claude")
+CLI_MODEL = os.environ.get("CLI_MODEL", "claude-opus-5")
+CLI_CONCURRENCY = int(os.environ.get("CLI_CONCURRENCY", "3"))
+CLI_TIMEOUT = float(os.environ.get("CLI_TIMEOUT", "900"))
+
 # Concurrency for the per-org fan-out.
 MAX_CONCURRENCY = int(os.environ.get("MAX_CONCURRENCY", "8"))
 MAX_TOOL_TURNS = int(os.environ.get("MAX_TOOL_TURNS", "8"))
@@ -233,6 +241,11 @@ def anthropic_via_openrouter() -> bool:
 
 def require_key() -> None:
     if DRY_RUN:
+        return
+    if PROVIDER == "claude-cli":
+        import shutil as _sh
+        if not _sh.which(CLI_BIN):
+            raise SystemExit(f"the {CLI_BIN!r} command is not on PATH (provider is claude-cli).")
         return
     if PROVIDER == "openrouter":
         if not OPENROUTER_API_KEY:

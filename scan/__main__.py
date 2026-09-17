@@ -27,7 +27,7 @@ def main() -> None:
     pr.add_argument("--dry-run", action="store_true", help="list what would go, delete nothing")
 
     ev = sub.add_parser("eval", help="trajectory eval on the golden set, and optionally judge a memo")
-    ev.add_argument("--provider", choices=["anthropic", "openrouter"], default=None)
+    ev.add_argument("--provider", choices=["anthropic", "openrouter", "claude-cli"], default=None)
     ev.add_argument("--model", default=None, help="openrouter model id")
     ev.add_argument("--judge", type=Path, default=None, help="path to a memo .md to score on the rubric")
     ev.add_argument("--profile", default=None, help="scan profile (default horizon)")
@@ -40,7 +40,7 @@ def main() -> None:
                      help="stage 1 only: scan just the orgs in this xlsx (incremental)")
     run.add_argument("--dry-run", action="store_true",
                      help="mock every model call, no key or network needed")
-    run.add_argument("--provider", choices=["anthropic", "openrouter"], default=None,
+    run.add_argument("--provider", choices=["anthropic", "openrouter", "claude-cli"], default=None,
                      help="which backend to run the agents on")
     run.add_argument("--model", default=None,
                      help="openrouter model id when --provider openrouter, e.g. openai/gpt-5")
