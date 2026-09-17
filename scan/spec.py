@@ -611,3 +611,27 @@ def enforce_theme_seed(themes: list[dict], sp: dict) -> tuple[list[dict], list[d
     unplaced = [e for e in extras if all(e is not k and e.get("name") != k.get("name") for k in kept_extra)]
     ordered = [placed[s["name"]] for s in seed if s["name"] in placed]
     return ordered + kept_extra, unplaced
+
+
+# --- extra fields the Reader records for a profile ------------------------------
+def reader_fields(sp: dict) -> dict[str, str]:
+    return dict(sp.get("reader_fields") or {})
+
+
+def reader_schema(sp: dict, base: dict) -> dict:
+    """The Reader's schema: the base schema, plus the profile's extra string fields.
+    Returns the base object itself when the profile adds none, so the horizon scan
+    sends exactly the schema it always has."""
+    extra = reader_fields(sp)
+    if not extra:
+        return base
+    import copy
+    sch = copy.deepcopy(base)
+    for k, desc in extra.items():
+        sch["properties"][k] = {"type": "string", "description": desc}
+        sch["required"].append(k)
+    return sch
+
+
+def evidence_config(sp: dict) -> dict | None:
+    return sp.get("evidence") or None

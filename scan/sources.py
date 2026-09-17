@@ -375,3 +375,19 @@ def quote_grounded(url: str, quote: str):
     if len(key) >= 20 and key in text:
         return True
     return False
+
+
+def quote_exact(url: str, quote: str):
+    """Strict grounding: the WHOLE quote, normalized, appears in the source. The
+    evidence ladder reads method words from the quote, so a quote whose first words
+    match while its method words were paraphrased must not pass. True, False, or
+    None when the source cannot be read."""
+    if not quote or not url or not url.lower().startswith(("http://", "https://")):
+        return None
+    if "example.org" in url:
+        return None
+    text = _norm(fetch_text(url, max_chars=400000))
+    nq = _norm(quote)
+    if not text or not nq or len(nq) < 8:
+        return None
+    return nq in text

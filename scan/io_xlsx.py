@@ -188,9 +188,11 @@ def write_longlist(rows: list[dict[str, Any]]) -> Path:
     ws = wb.active
     ws.title = "longlist"
     crit = config.active_spec().get("criteria", [])
+    graded = bool(config.active_spec().get("evidence"))
     cols = (["rid", "keep", "org", "approach", "band", "what", "year"]
             + [c["name"] for c in crit]
-            + ["overall", "verification", "evidence check", "source"])
+            + ["overall", "verification", "evidence check", "source"]
+            + (["evidence level", "method sentence", "evaluation", "evidence flags"] if graded else []))
     ws.append(cols)
     for i, r in enumerate(rows, start=1):
         r.setdefault("rid", f"R{i:04d}")                 # stable id for the stage-2 rejoin
@@ -201,6 +203,11 @@ def write_longlist(rows: list[dict[str, Any]]) -> Path:
         row += [s.get(c["key"], "") for c in crit]
         row += [s.get("overall", ""), v.get("status", ""),
                 guardrail.evidence_check(r), r.get("url", "")]
+        if graded:
+            rec = r.get("evidence_record") or {}
+            best = rec.get("best") or {}
+            row += [rec.get("label", ""), best.get("method_quote", ""), best.get("url", ""),
+                    "; ".join(rec.get("flags") or [])]
         ws.append(row)
     _stamp(wb)
     wb.save(path)
@@ -248,8 +255,41 @@ def read_kept_longlist() -> list[dict[str, Any]]:
         vstatus = str(d.get("verification", "") or "").strip()
         row["verification"] = {**(base.get("verification") or {}),
                                **({"status": vstatus} if vstatus else {})}
+        _apply_level_override(row, d.get("evidence level"))
         kept.append(row)
     return kept
+
+
+def _apply_level_override(row: dict[str, Any], cell: Any) -> None:
+    """A reviewer may change an evidence level in the longlist. Only a person can,
+    the change is kept on the record with what it replaced, and the posture it allows
+    is recomputed by the same gates the code uses."""
+    rec = row.get("evidence_record")
+    if not rec or cell in (None, ""):
+        return
+    from . import ladder
+    new = ladder.parse_level(cell)
+    if not str(cell).strip().upper().startswith("E") or new == rec.get("level"):
+        return
+    gates = (config.active_spec().get("evidence") or {}).get("gates") or {}
+    rec["override"] = {"from": rec.get("label", ""), "to": ladder.label(new), "by": "review"}
+    rec["level"], rec["label"] = new, ladder.label(new)
+    rec["posture_allowed"] = ladder.best_posture(new, rec.get("replicated_in_africa", False), gates)
+
+
+def write_evidence_overrides(rows: list[dict[str, Any]]) -> Path | None:
+    """Every evidence level a reviewer changed, so the change is on the record."""
+    path = config.REVIEW_DIR / "evidence_overrides.md"
+    changed = [r for r in rows if (r.get("evidence_record") or {}).get("override")]
+    if not changed:
+        path.unlink(missing_ok=True)
+        return None
+    lines = ["# Evidence levels changed at review\n"]
+    for r in changed:
+        o = r["evidence_record"]["override"]
+        lines.append(f"- {r.get('org','')}: {r.get('name','')}, {o['from']} to {o['to']}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
 
 
 def write_open_questions(rows: list[dict[str, Any]], dropped: list[dict[str, Any]]) -> Path:

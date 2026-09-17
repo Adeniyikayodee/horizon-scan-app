@@ -21,7 +21,7 @@ from typing import Any, Callable
 
 Progress = Callable[[dict], None] | None
 
-from . import agents, client, config, docx_out, guardrail, io_xlsx, sources, spec
+from . import agents, client, config, docx_out, guardrail, io_xlsx, ladder, sources, spec
 
 
 def _today() -> str:
@@ -268,6 +268,23 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
                                 "stage": "error", "reason": str(e)[:160], "error": str(e)})
             await tick()
 
+        # 3b. evidence: find and grade evaluations, then hold the entry bar (profiles only)
+        evcfg = spec.evidence_config(config.active_spec())
+        if evcfg:
+            emit(score="done", verify="run", note=f"grading evidence for {len(scored)}")
+            passed = []
+            for appr in scored:
+                rec = await _evidence_for(ctx, org, appr, evcfg)
+                appr["evidence_record"] = rec
+                if ladder.entry_allowed(rec["level"], rec["african"], evcfg.get("geography") or {}):
+                    passed.append(appr)
+                else:
+                    where = "outside Africa" if rec["african"] is False else "in Africa"
+                    dropped.append({"org": org["name"], "name": appr["name"], "stage": "below the evidence bar",
+                                    "reason": f"{rec['label']} for a program {where}, below the entry bar"})
+                await tick()
+            scored = passed
+
         # 4. verify each claim against its primary, adversarially
         emit(score="done", verify="run", note=f"verifying {len(scored)}")
         for appr in scored:
@@ -293,6 +310,8 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
                 "source_truncated": appr.get("source_truncated", False),
                 "score": appr.get("score", {}), "overall": appr.get("overall", ""),
                 "verification": vd, "queries": queries,
+                **({"evidence_record": appr["evidence_record"]} if "evidence_record" in appr else {}),
+                **{k: appr.get(k, "") for k in spec.reader_fields(config.active_spec())},
             })
             await tick()
 
@@ -381,6 +400,85 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
         return payload
 
 
+async def _evidence_for(ctx, org: dict[str, str], appr: dict[str, Any], evcfg: dict[str, Any]) -> dict[str, Any]:
+    """Find, read, and grade the evidence for one approach. The model finds and reads,
+    the code grades (ladder.grade), and the Verifier then tries to disconfirm each
+    evaluation at E3 or above. The program's own document is always read as one more,
+    self-published, candidate, so a program with only its own results can still show
+    a measured change (E2)."""
+    try:
+        found = await agents.find_evidence(ctx, org, appr, evcfg.get("search_first") or [])
+    except Exception:
+        found = []
+    lo, hi = config.window("evaluation")
+    external = []
+    for e in found:
+        yr = _first_year(e.get("year", ""), e.get("title", ""))
+        if yr is not None and not (lo <= yr <= hi):
+            continue
+        if e.get("url") == appr.get("url"):
+            continue
+        external.append(e)
+    external = external[: int(evcfg.get("max_evaluations", 2))]
+    if external and not config.DRY_RUN:
+        dead = await asyncio.gather(*[asyncio.to_thread(sources.link_dead, e["url"]) for e in external])
+        external = [e for e, d in zip(external, dead) if not d]
+    own = {"title": appr.get("report_title", "") or appr.get("name", ""), "year": str(appr.get("year", "")),
+           "evaluator": org["name"], "type": "program document", "url": appr.get("url", ""), "own": True}
+    candidates = external + ([own] if own["url"] else [])
+
+    graded = []
+    for ev in candidates:
+        url = ev.get("url", "")
+        doc = "" if config.DRY_RUN else await asyncio.to_thread(sources.fetch_text, url, config.READ_MAX_CHARS)
+        if not doc and not config.DRY_RUN:
+            continue                       # an evaluation we cannot read cannot be graded
+        try:
+            r = await agents.read_evidence(ctx, appr, ev, doc)
+        except Exception:
+            continue
+        if ev.get("own"):
+            r["independent"] = False       # the program's own document is never independent
+        # quote_exact never fetches a placeholder link, so this is safe in a dry run too
+        mg = await asyncio.to_thread(sources.quote_exact, url, r["method_quote"])
+        og = await asyncio.to_thread(sources.quote_exact, url, r["outcome_quote"])
+        g = ladder.grade({**ev, **r}, implementer=org["name"], method_grounded=mg, outcome_grounded=og)
+        g["method_grounded"], g["outcome_grounded"] = mg, og
+        if g["level"] >= 3:
+            try:
+                vd = await agents.verify(ctx, {"name": appr.get("name", ""), "what": g.get("effect_summary", ""),
+                                               "evidence": g.get("method_quote", ""),
+                                               "quotes": [g.get("method_quote", ""), g.get("outcome_quote", "")],
+                                               "url": url})
+            except Exception:
+                vd = {"claim_supported": False, "note": "verify failed"}
+            g["verification"] = vd
+            if not vd.get("claim_supported"):
+                g["caps"].append("the Verifier could not confirm the evaluation's claim, capped at E2")
+                g["flags"].append(f"code set {ladder.label(g['level'])}, Verifier did not confirm, now E2")
+                g["level"] = 2
+        graded.append(g)
+
+    combined = ladder.combine(graded)
+    countries = [c for e in combined["evaluations"] for c in (e.get("countries") or [])]
+    african = ladder.is_african(countries or str(appr.get("countries", "")), org.get("region", ""))
+    best = max(combined["evaluations"], key=lambda e: e.get("level", 1), default=None)
+    funders = list(dict.fromkeys(f for e in combined["evaluations"] for f in (e.get("funders") or []) if f))
+    return {
+        "level": combined["level"], "label": combined["label"],
+        "replicated_in_africa": combined["replicated_in_africa"], "african": african,
+        "posture_allowed": ladder.best_posture(combined["level"], combined["replicated_in_africa"],
+                                               evcfg.get("gates") or {}),
+        "evaluations": combined["evaluations"],
+        "best": ({k: best.get(k) for k in ("title", "url", "year", "evaluator", "method", "method_quote",
+                                           "effect_summary", "outcome_quote", "cost_per_outcome")}
+                 if best else {}),
+        "funders": funders,
+        "note": "" if external else "no independent evaluation found",
+        "flags": [f for e in combined["evaluations"] for f in (e.get("flags") or [])],
+    }
+
+
 _MARK_PTS = {"strong": 3, "partial": 2, "weak": 1}
 
 
@@ -409,6 +507,25 @@ def _apply_top2(themes: list[dict[str, Any]]) -> list[str]:
     for t in themes:
         t["top2"] = id(t) in chosen
     return [t["name"] for t in eligible[:n]]
+
+
+def apply_posture_gates(rows: list[dict[str, Any]], themes: list[dict[str, Any]], gates: dict[str, Any]) -> None:
+    """Postures follow the evidence, in code. Each option takes the best posture its
+    evidence level allows. Each theme keeps the model's proposed posture only when
+    its strongest member's evidence allows it, and is lowered otherwise, never raised."""
+    for r in rows:
+        rec = r.get("evidence_record") or {}
+        r["posture"] = ladder.best_posture(int(rec.get("level", 1)), bool(rec.get("replicated_in_africa")), gates)
+    by_name = {r.get("name", ""): r for r in rows}
+    for t in themes:
+        recs = [(by_name.get(m) or {}).get("evidence_record") or {} for m in t.get("members") or []]
+        level = max([int(x.get("level", 1)) for x in recs] or [1])
+        repl = any(x.get("replicated_in_africa") for x in recs)
+        proposed = t.get("posture", "")
+        t["posture"] = ladder.cap_posture(proposed, level, repl, gates)
+        t["evidence_level"] = ladder.label(level)
+        if t["posture"] != proposed:
+            t["posture_note"] = f"proposed {proposed}, evidence ({ladder.label(level)}) allows {t['posture']}"
 
 
 def _reject_dead_corroboration(corr: dict[str, Any], dead: bool) -> dict[str, Any]:
@@ -604,6 +721,10 @@ async def run_stage2() -> None:
         for t in screened:
             print(f"    {t.get('name','')}: {t['screened']}")
     io_xlsx.write_theme_screen(themes, unplaced)
+    evcfg = spec.evidence_config(config.active_spec())
+    if evcfg:
+        io_xlsx.write_evidence_overrides(kept)
+        apply_posture_gates(kept, themes, evcfg.get("gates") or {})
 
     # carry the scan's verification through into the report: per-theme evidence
     row_by_name = {r["name"]: r for r in kept}

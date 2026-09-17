@@ -40,7 +40,9 @@ def _read(subj: str, h: int) -> dict[str, Any]:
             "uptake": "One government has begun to adopt it.",
             "quotes": ["The program raised local value retention by a measurable margin."],
             "locator": "Section 3, Results, page 14", "verbatim": True,
-            "access_note": "Published 2024."}
+            "access_note": "Published 2024.",
+            **{k: ("Ghana" if k == "countries" else f"Sample {k.replace('_', ' ')}.")
+               for k in spec_mod.reader_fields(config.active_spec())}}
 
 
 def _score(subj: str, h: int) -> dict[str, Any]:
@@ -172,11 +174,37 @@ def _hunches() -> dict[str, Any]:
         {"name": "Coastal sectors look open", "note": "The blue economy appears underserved."}]}
 
 
+def _find_evidence(subj: str, h: int) -> dict[str, Any]:
+    print(f"  evidence finding evaluations for {subj[:40]}")
+    return {"evaluations": [
+        {"title": "Impact evaluation of the program", "year": "2021",
+         "evaluator": "An independent research group", "type": "impact evaluation",
+         "url": f"https://example.org/eval{h % 97}.pdf"}]}
+
+
+def _read_evidence(subj: str, h: int) -> dict[str, Any]:
+    print(f"  evidence reading {subj[:40]}")
+    rct = h % 2 == 0
+    return {"program_matches": True, "method": "rct" if rct else "before_after",
+            "method_quote": ("Young people were randomly assigned to the program or a control group."
+                             if rct else "We compare baseline and endline surveys of participants."),
+            "outcome_type": "outcomes", "outcomes": ["employment", "earnings"],
+            "outcome_quote": "Employment rose among participants.",
+            "effect_summary": "Employment rose by a measured amount.", "sample": "1,000 young people",
+            "countries": ["Ghana"], "year": "2021", "evaluator": "An independent research group",
+            "independent": True, "funders": ["A foundation"], "funder_quote": "Funded by a foundation.",
+            "cost_per_outcome": "not found", "cost_quote": "", "model_level": "E4" if rct else "E2"}
+
+
 def mock_response(schema: dict[str, Any], user: str) -> dict[str, Any]:
     keys = set(schema.get("properties", {}).keys())
     subj = _subject(user)
     h = sum(ord(c) for c in user)
 
+    if "evaluations" in keys:
+        return _find_evidence(subj, h)
+    if "method_quote" in keys:
+        return _read_evidence(subj, h)
     if "candidates" in keys:
         return _scout(subj, h)
     if "reports" in keys:
