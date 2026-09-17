@@ -31,8 +31,8 @@ def _today() -> str:
 
 
 # --- the recency window, enforced in code, reading the SAME source of truth
-#     (config.YEAR_MIN/MAX) that every agent frame quotes, so the two never drift ---
-WINDOW = (config.YEAR_MIN, config.YEAR_MAX)
+#     (config.window, per source tier) that every agent frame quotes, so the two
+#     never drift ---
 _YEAR_RE = re.compile(r"(?:19|20)\d{2}")
 
 
@@ -61,11 +61,17 @@ def _first_year(*fields) -> int | None:
     return None
 
 
-def _out_of_window(year: int | None) -> bool:
-    """True only when a source carries a CONFIRMED year outside the window. An
-    unknown year is not out of window, it is undated, we cannot drop what we
+def _out_of_window(year: int | None, tier: str = "program") -> bool:
+    """True only when a source carries a CONFIRMED year outside its tier's window.
+    An unknown year is not out of window, it is undated, we cannot drop what we
     cannot date, so it is flagged instead."""
-    return year is not None and not (WINDOW[0] <= year <= WINDOW[1])
+    lo, hi = config.window(tier)
+    return year is not None and not (lo <= year <= hi)
+
+
+def _window_label(tier: str = "program") -> str:
+    lo, hi = config.window(tier)
+    return f"{lo}-{hi}"
 
 
 def _best_report(cand: dict, reports: list[dict]) -> dict | None:
@@ -189,7 +195,7 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
                          if not _out_of_window(_first_year(rp.get("date", ""), rp.get("title", "")))]
             if len(in_window) != len(reports):
                 emit(read="run", note=f"{len(reports) - len(in_window)} reports outside "
-                     f"{config.YEAR_MIN}-{config.YEAR_MAX} dropped")
+                     f"{_window_label()} dropped")
             reports = in_window
 
         # drop dead report links (404/410) so a stale or hallucinated URL is never
@@ -242,7 +248,7 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
             elif _out_of_window(yr):
                 dropped.append({"org": org["name"], "name": cand["name"],
                                 "stage": "outside the recency window",
-                                "reason": f"source dated {yr}, outside {config.YEAR_MIN}-{config.YEAR_MAX}"})
+                                "reason": f"source dated {yr}, outside {_window_label()}"})
             elif r.get("band") in spec.drop_bands(config.active_spec()):
                 dropped.append({"org": org["name"], "name": cand["name"], "stage": "maturing",
                                 "reason": "maturing, now standard practice"})
@@ -590,12 +596,14 @@ async def run_stage2() -> None:
     # model tagged it. This runs BEFORE _apply_top2, so a screened theme can never be
     # promoted to one of the two cleanest new areas.
     themes = spec.screen_existing(themes, config.active_spec())
+    # a profile with a fixed theme list holds the model to it, in code
+    themes, unplaced = spec.enforce_theme_seed(themes, config.active_spec())
     screened = [t for t in themes if t.get("screened")]
     if screened:
         print(f"stage 2: {len(screened)} theme(s) held back to existing work by the portfolio screen")
         for t in screened:
             print(f"    {t.get('name','')}: {t['screened']}")
-    io_xlsx.write_theme_screen(themes)
+    io_xlsx.write_theme_screen(themes, unplaced)
 
     # carry the scan's verification through into the report: per-theme evidence
     row_by_name = {r["name"]: r for r in kept}

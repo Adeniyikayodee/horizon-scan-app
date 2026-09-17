@@ -113,9 +113,31 @@ def window_years() -> list[int]:
     return list(range(YEAR_MIN, YEAR_MAX + 1))
 
 
+def window(tier: str = "program") -> tuple[int, int]:
+    """The recency window for one source tier. A profile sets windows per tier
+    (spec["windows"]); the horizon scan has one window, YEAR_MIN to YEAR_MAX, for
+    everything."""
+    w = (active_spec().get("windows") or {}).get(tier)
+    return (int(w["from"]), int(w["to"])) if w else (YEAR_MIN, YEAR_MAX)
+
+
+def _tiered_window_rule(tiers: dict) -> str:
+    lines = ["# Standing hard rule, applies to every stage", "",
+             "Every source carries a recency window by its tier, and the window is a hard rule, "
+             "not a preference. Always record each source's publication or update date. A source "
+             "that cannot be dated to its window is set aside.", ""]
+    for key, t in tiers.items():
+        lines.append(f"- {t.get('label', key)}: published or updated from {t['from']} to {t['to']}."
+                     + (f" {t['note']}" if t.get("note") else ""))
+    return "\n".join(lines)
+
+
 def window_rule() -> str:
     """The canonical recency rule, injected verbatim into every agent's frame so
     all stages carry the identical hard rule. The years come only from here."""
+    tiers = active_spec().get("windows")
+    if tiers:
+        return _tiered_window_rule(tiers)
     ys = ", ".join(str(y) for y in window_years())
     return (f"# Standing hard rule, applies to every stage\n\n"
             f"The recency window is {YEAR_MIN} to {YEAR_MAX} ({ys}), and it is a hard rule, not a "

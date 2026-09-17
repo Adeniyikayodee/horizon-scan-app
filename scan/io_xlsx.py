@@ -272,7 +272,7 @@ def write_open_questions(rows: list[dict[str, Any]], dropped: list[dict[str, Any
     return path
 
 
-def write_theme_screen(themes: list[dict[str, Any]]) -> Path:
+def write_theme_screen(themes: list[dict[str, Any]], unplaced: list[dict[str, Any]] | None = None) -> Path:
     """What the existing-portfolio screen did, so the analyst can see and argue with
     it. A theme held back here is not a failure of the scan, it is the scan refusing
     to recommend work the institute already runs. Edit the spec's excluded_areas to
@@ -287,6 +287,12 @@ def write_theme_screen(themes: list[dict[str, Any]]) -> Path:
     lines += ["\n## Near the line, left as the model tagged them\n"]
     lines += [f"- {t.get('name','')} [{t.get('tag','')}, {t.get('posture','')}]: {t['screen_note']}"
               for t in near] or ["- none"]
+    if unplaced:
+        lines += ["\n## Outside the fixed theme list, not placed\n",
+                  "The model proposed these themes outside the profile's list and they did not "
+                  "meet the bar for an extra theme. Their options need a home at review.\n"]
+        lines += [f"- {u.get('name','')}: {', '.join(u.get('members') or []) or 'no members'}"
+                  for u in unplaced]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 

@@ -565,3 +565,49 @@ def drop_bands(sp: dict) -> list[str]:
 def lead_rule(sp: dict) -> dict:
     """Which themes the memo leads with: how many, from which postures and tags."""
     return {**_HORIZON_LEAD, **(sp.get("lead") or {})}
+
+
+# --- a fixed theme list, enforced in code -------------------------------------
+def _theme_key(name: str) -> str:
+    return " ".join(_WORD.findall(str(name or "").lower()))
+
+
+def enforce_theme_seed(themes: list[dict], sp: dict) -> tuple[list[dict], list[dict]]:
+    """Hold the Themer to the profile's theme list (spec["themes_seed"]).
+
+    A theme whose name matches a seed theme takes the seed's exact name and its
+    relation as the tag, so the model cannot relabel a current area as new. Two
+    themes that land on the same seed are merged. A theme outside the list survives
+    only as one of at most `max_extra_themes`, and only with at least
+    `extra_min_members` members, tagged new; the rest are returned as unplaced for
+    the reviewer. Without a seed list, themes pass through untouched."""
+    seed = sp.get("themes_seed")
+    if not seed:
+        return themes, []
+    by_key = {_theme_key(s["name"]): s for s in seed}
+    placed: dict[str, dict] = {}
+    extras: list[dict] = []
+    for t in themes:
+        s = by_key.get(_theme_key(t.get("name", "")))
+        if not s:
+            extras.append(t)
+            continue
+        if s["name"] in placed:
+            keep = placed[s["name"]]
+            keep["members"] = list(dict.fromkeys((keep.get("members") or []) + (t.get("members") or [])))
+            continue
+        t = dict(t)
+        t["name"], t["tag"] = s["name"], s["relation"]
+        placed[s["name"]] = t
+    max_extra = int(sp.get("max_extra_themes", 0))
+    floor = int(sp.get("extra_min_members", 3))
+    ok = sorted([e for e in extras if len(e.get("members") or []) >= floor],
+                key=lambda e: len(e.get("members") or []), reverse=True)[:max_extra]
+    kept_extra = []
+    for e in ok:
+        e = dict(e)
+        e["tag"] = sp.get("extra_theme_tag", "new")
+        kept_extra.append(e)
+    unplaced = [e for e in extras if all(e is not k and e.get("name") != k.get("name") for k in kept_extra)]
+    ordered = [placed[s["name"]] for s in seed if s["name"] in placed]
+    return ordered + kept_extra, unplaced
