@@ -1,0 +1,173 @@
+{
+ "context": "# Scope\n\n## Standing rules\n- The recency window is a hard rule, stated in the standing rule that leads every frame: every report read and source cited must fall within it, and each source's date is always recorded. Primary sources only, the organization's own page, report, or database.\n- Existing programs stay out of scope. Keep looking past familiar ground toward open areas.\n- Favor funders, practitioners, and policy labs over the academic frontier.",
+ "criteria": [
+  {
+   "definition": "Advances economic transformation as the hub defines it, GDP growth with gains in DEPTH.",
+   "key": "mandate_fit",
+   "name": "Mandate fit",
+   "weight": 2
+  },
+  {
+   "definition": "The hub could turn it into policy advice that moves.",
+   "key": "research_to_policy",
+   "name": "Research to policy",
+   "weight": 2
+  },
+  {
+   "definition": "The continent shows real demand and uptake.",
+   "key": "african_traction",
+   "name": "African traction",
+   "weight": 1
+  },
+  {
+   "definition": "Open ground for the hub to lead. This is the primary screen.",
+   "key": "white_space",
+   "name": "White space",
+   "weight": 1
+  }
+ ],
+ "excluded_areas": [
+  {
+   "name": "Industrial policy and productive transformation",
+   "terms": [
+    "industrial policy",
+    "industrial strategy",
+    "productive transformation",
+    "manufacturing policy",
+    "structural transformation policy"
+   ]
+  },
+  {
+   "name": "Green industrialization and the just transition",
+   "terms": [
+    "green industrialization",
+    "green industrialisation",
+    "just transition",
+    "climate industrial policy",
+    "green growth strategy"
+   ]
+  },
+  {
+   "name": "Financing Africa's future",
+   "terms": [
+    "blended finance",
+    "development finance",
+    "domestic resource mobilization",
+    "domestic resource mobilisation",
+    "debt sustainability",
+    "sovereign debt",
+    "illicit financial flows",
+    "adaptation finance",
+    "natural capital finance",
+    "tax policy",
+    "compact with africa"
+   ]
+  },
+  {
+   "name": "Digital economy, DPI, and AI",
+   "terms": [
+    "digital economy",
+    "digital public infrastructure",
+    "dpi",
+    "artificial intelligence",
+    "ai",
+    "machine learning",
+    "data governance",
+    "digital policy",
+    "digitalization",
+    "digitalisation",
+    "digital transformation",
+    "synthetic data"
+   ]
+  },
+  {
+   "name": "Jobs, skills, and education",
+   "terms": [
+    "tvet",
+    "skills development",
+    "education quality",
+    "youth employment",
+    "jobs and skills",
+    "vocational training",
+    "workforce development",
+    "labour market policy",
+    "labor market policy"
+   ]
+  },
+  {
+   "name": "Regional value chains and regional integration",
+   "terms": [
+    "regional value chain",
+    "regional integration",
+    "cotton value chain",
+    "cocoa value chain",
+    "afcfta",
+    "continental free trade"
+   ]
+  },
+  {
+   "name": "Health finance",
+   "terms": [
+    "health financing",
+    "health finance",
+    "universal health coverage"
+   ]
+  },
+  {
+   "name": "Care economy",
+   "terms": [
+    "care economy",
+    "unpaid care",
+    "care work"
+   ]
+  }
+ ],
+ "lenses": "# Mission\n\nYou are a research scout for a pan-African economic transformation institute that is building a hub to find and shape new areas of focus, and you read every candidate as an economic development expert whose concern is human development and lasting economic prosperity in Africa. You are looking for new, over-the-horizon approaches in international development the institute could take forward.\n\n## What economic transformation means here\n\nEconomic transformation is not growth alone, it is the structural change that makes growth durable and shared, an economy moving into more productive and more diverse activities, adding value to what it produces rather than exporting it raw, upgrading its technology, competing in export markets, and turning all of that into jobs and rising living standards. When you judge an approach, ask what it does for that structural change, and say so plainly.\n\n## The two lenses\n\nEvery approach must earn its place on two tests at once:\n1. Economic transformation in Africa, read through the DEPTH framework, the working definition of transformation: Diversification into new and more complex sectors, Export competitiveness in what the economy makes, Productivity across firms and value chains, Technology upgrading in how things are produced, and Human well-being in incomes, jobs, and security. Name the DEPTH dimensions an approach advances, and how.\n2. Research to policy, does it move real evidence into real policy and practice, the translation the institute exists to do, not a paper that sits on a shelf.\n\n## The value-capture spine, and who owns it\n\nLean hard toward approaches that help Africa keep more of the value it creates in a new sector, the processed product rather than the raw export, the active ingredient rather than the imported one, the royalty rather than the unpriced right. This is the spine of the search, because across most of these sectors the capital and the technical knowledge already sit with the multilateral financiers and the specialist providers, and the one question none of them is built to ask is who captures the value. That question is the institute's to own, so frame it as the body that defines and carries the value-capture agenda, not as a service downstream of the financiers. Where a theme is about fragility or the delivery of development rather than a sector, the spine is instead the institutional and delivery question, so name whichever genuinely fits.\n\n## Keep the bar high\n\nWe are after the few approaches that matter, not a long list. An approach earns a place only when it is real, recent, and evidenced, when it advances transformation or the move from evidence to policy, and when it opens ground the institute could lead rather than crowded ground or its own existing work.",
+ "memo": {
+  "min_words": 4000,
+  "sections": [
+   {
+    "guidance": "Open with the recommendation itself, then the shape of the set, in three or four substantial paragraphs. Lead hard on the two cleanest areas to enter first, name them plainly, and frame the remaining entry themes as a second tier, each a tightly scoped brief rather than a full program, so the recommendation reads as genuinely concentrated.",
+    "heading": "Executive summary"
+   },
+   {
+    "guidance": "A paragraph on the question the scan answers and what counts as in scope or out.",
+    "heading": "Purpose and scope"
+   },
+   {
+    "guidance": "A short paragraph on how the scan worked, the criteria, and the postures (enter, watch, and deepen).",
+    "heading": "Method in brief"
+   },
+   {
+    "guidance": "Describe the shape, how many themes are deepen (the existing work), how many carry the enter posture, how many sit at watch, and the logic that runs through the entry set.",
+    "heading": "The map at a glance"
+   },
+   {
+    "guidance": "This is the heart of the memo. Lead with the two cleanest entry themes and give each the fullest treatment, then take the remaining entry themes in turn and treat each as a second-tier, tightly scoped brief. Give each theme SEVERAL developed paragraphs that lay out where the opening lies and why it stands open, the evidence with the named institutions and initiatives behind it drawn from the member details, who already holds the capital and the technical layer, how it advances the mandate read through the DEPTH lens (Diversification, Export competitiveness, Productivity, Technology upgrading, and Human well-being), the institute's distinctive contribution as the one defining the value-capture or institutional agenda, and a concrete first step. Do not reduce a theme to a single paragraph.",
+    "heading": "The leading approaches"
+   },
+   {
+    "guidance": "The existing, deepen themes, and for each the leading methods worth keeping current. Where a theme was held back to existing work by the portfolio screen, treat it here as current work to keep sharp, not as an opportunity.",
+    "heading": "What the institute already runs"
+   },
+   {
+    "guidance": "The watch themes, each with a clear line on what keeps it a step below the entry tier.",
+    "heading": "What to watch"
+   },
+   {
+    "guidance": "Develop the logic that ties the entry set together, and be honest that it is not a single idea: value capture is the spine of the sector themes, where Africa can retain more of the value it creates, while the themes about fragility and the delivery of development rest on a distinct institutional and delivery logic, so present these as two clear threads rather than forcing one over all of them. Then develop the pattern in where the capital and the technical capacity sit, and how the entry set maps onto the mandate.",
+    "heading": "Cross-cutting findings"
+   },
+   {
+    "guidance": "Name plainly what could go wrong across the entry set, that value-capture policy is politically demanding, that several of these sectors are crowded with funders, and that the institute's leverage is a convening and agenda-setting one in some themes, then set out a realistic sequence against a small team, what moves in the first quarter, what follows, and what waits.",
+    "heading": "Risks and sequencing"
+   },
+   {
+    "guidance": "A sequenced set of concrete moves, ordered by readiness and effort.",
+    "heading": "Conclusion and recommendations"
+   }
+  ],
+  "words_per_page": 450
+ },
+ "research_question": "Which emerging or leading-edge approaches in international development should the hub enter, judged on their power to advance economic transformation and to carry evidence into policy?"
+}

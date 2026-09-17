@@ -1,0 +1,72 @@
+{
+ "longlist": [
+  [
+   "rid",
+   "keep",
+   "org",
+   "approach",
+   "band",
+   "what",
+   "year",
+   "Mandate fit",
+   "Research to policy",
+   "African traction",
+   "White space",
+   "overall",
+   "verification",
+   "evidence check",
+   "source"
+  ],
+  [
+   "R0001",
+   "Y",
+   "African Economic Research Consortium (AERC)",
+   "African Economic Research Consortium (AERC) evidence-to-policy lab",
+   "emerging",
+   "An approach that adds value in a new sector.",
+   "2025",
+   "strong",
+   "partial",
+   "strong",
+   "partial",
+   "high",
+   "partial",
+   "",
+   "https://example.org/report-value-addition.pdf"
+  ],
+  [
+   "R0002",
+   "Y",
+   "Policy Center for the New South",
+   "Policy Center for the New South value-addition initiative",
+   "frontier",
+   "An approach that adds value in a new sector.",
+   "2024",
+   "strong",
+   "partial",
+   "strong",
+   "partial",
+   "high",
+   "partial",
+   "",
+   "https://example.org/report-value-addition.pdf"
+  ],
+  [
+   "R0003",
+   "Y",
+   "UN Trade and Development (UNCTAD)",
+   "UN Trade and Development (UNCTAD) value-addition initiative",
+   "frontier",
+   "An approach that adds value in a new sector.",
+   "2024",
+   "partial",
+   "strong",
+   "partial",
+   "strong",
+   "medium",
+   "partial",
+   "",
+   "https://example.org/report-value-addition.pdf"
+  ]
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "Scan": [
+  [
+   "Theme",
+   "Approach",
+   "Band",
+   "What",
+   "Year",
+   "Overall",
+   "Verification",
+   "Evidence check",
+   "Source"
+  ],
+  [
+   "Blue economy and coastal value addition",
+   "African Economic Research Consortium (AERC) evidence-to-policy lab",
+   "emerging",
+   "An approach that adds value in a new sector.",
+   "2025",
+   "high",
+   "partial",
+   "",
+   "https://example.org/report-value-addition.pdf"
+  ],
+  [
+   "Blue economy and coastal value addition",
+   "Policy Center for the New South value-addition initiative",
+   "frontier",
+   "An approach that adds value in a new sector.",
+   "2024",
+   "high",
+   "partial",
+   "",
+   "https://example.org/report-value-addition.pdf"
+  ],
+  [
+   "Blue economy and coastal value addition",
+   "UN Trade and Development (UNCTAD) value-addition initiative",
+   "frontier",
+   "An approach that adds value in a new sector.",
+   "2024",
+   "medium",
+   "partial",
+   "",
+   "https://example.org/report-value-addition.pdf"
+  ]
+ ]
+}
