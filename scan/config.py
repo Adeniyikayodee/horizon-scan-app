@@ -166,12 +166,14 @@ def load_context() -> dict[str, str]:
         "scope": _sm.scope_text(sp),
         "scoring": _sm.scoring_text(sp),
     }
-    if SCAN_MODE == "global":
+    horizon = _sm.profile_name(sp) == _sm.HORIZON
+    if SCAN_MODE == "global" and horizon:
         gp = CONTEXT_DIR / "mission_global.md"
         if gp.exists():
             ctx["mission"] = gp.read_text(encoding="utf-8")
+    cdir = CONTEXT_DIR if horizon or not sp.get("context_dir") else ROOT / sp["context_dir"]
     for name in ("themes", "output_spec", "policy", "exemplar"):
-        p = CONTEXT_DIR / f"{name}.md"
+        p = cdir / f"{name}.md"
         ctx[name] = p.read_text(encoding="utf-8") if p.exists() else ""
     return ctx
 
@@ -211,3 +213,31 @@ def require_key() -> None:
         raise SystemExit(
             "ANTHROPIC_API_KEY is not set. Copy .env.example to .env and add your key."
         )
+
+
+# --- scan profiles ---
+PROFILES_DIR = ROOT / "profiles"
+
+
+def use_profile(name: str | None) -> None:
+    """Point the engine at a scan profile. The horizon scan is the default and keeps
+    today's paths and spec. Any other profile loads profiles/<name>/profile.json, reads
+    its roster from profiles/<name>/organizations.xlsx, and writes every run file under
+    profiles/<name>/run/, so two scans never overwrite each other."""
+    global SPEC, WORK_DIR, ORGS_WORK, REVIEW_DIR, OUT_DIR, MANIFEST, ORG_SHEET
+    if not name or name == "horizon":
+        return
+    pdir = PROFILES_DIR / name
+    path = pdir / "profile.json"
+    if not path.exists():
+        raise SystemExit(f"no profile named {name!r} (looked for {path})")
+    import json as _json
+    SPEC = _json.loads(path.read_text(encoding="utf-8"))
+    SPEC["profile"] = name
+    base = pdir / "run"
+    WORK_DIR, REVIEW_DIR, OUT_DIR = base / "work", base / "review", base / "out"
+    ORGS_WORK = WORK_DIR / "orgs"
+    MANIFEST = WORK_DIR / "manifest.json"
+    ORG_SHEET = pdir / "organizations.xlsx"
+    for d in (ORGS_WORK, REVIEW_DIR, OUT_DIR):
+        d.mkdir(parents=True, exist_ok=True)

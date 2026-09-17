@@ -243,7 +243,7 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
                 dropped.append({"org": org["name"], "name": cand["name"],
                                 "stage": "outside the recency window",
                                 "reason": f"source dated {yr}, outside {config.YEAR_MIN}-{config.YEAR_MAX}"})
-            elif r.get("band") == "maturing":
+            elif r.get("band") in spec.drop_bands(config.active_spec()):
                 dropped.append({"org": org["name"], "name": cand["name"], "stage": "maturing",
                                 "reason": "maturing, now standard practice"})
             else:
@@ -387,19 +387,22 @@ def _apply_top2(themes: list[dict[str, Any]]) -> list[str]:
     where nothing was worth entering still named two 'cleanest new areas to enter',
     which is an invented recommendation. Fewer than two entry themes is a real
     finding, so it is reported rather than padded. Returns the chosen names."""
-    crit = config.active_spec().get("criteria", [])
+    sp = config.active_spec()
+    crit = sp.get("criteria", [])
+    rule = spec.lead_rule(sp)
 
     def strength(t: dict) -> int:
         return sum((2 if c.get("weight", 1) >= 2 else 1) * _MARK_PTS.get(t.get(c["key"], ""), 0)
                    for c in crit)
 
     eligible = sorted(
-        [t for t in themes if t.get("tag") in ("new", "adjacent") and t.get("posture") == "enter"],
+        [t for t in themes if t.get("tag") in rule["tags"] and t.get("posture") in rule["postures"]],
         key=lambda t: (1 if t.get("top2") else 0, strength(t)), reverse=True)
-    chosen = {id(t) for t in eligible[:2]}
+    n = int(rule["count"])
+    chosen = {id(t) for t in eligible[:n]}
     for t in themes:
         t["top2"] = id(t) in chosen
-    return [t["name"] for t in eligible[:2]]
+    return [t["name"] for t in eligible[:n]]
 
 
 def _reject_dead_corroboration(corr: dict[str, Any], dead: bool) -> dict[str, Any]:
@@ -633,7 +636,7 @@ async def run_stage2() -> None:
 
     # two-source corroboration for the entry themes: confirm each one's central
     # finding on an INDEPENDENT source, so the recommendations do not rest on one
-    entry = [t for t in themes if t.get("posture") == "enter"]
+    entry = [t for t in themes if t.get("posture") in spec.lead_rule(config.active_spec())["postures"]]
     if entry:
         print(f"stage 2: corroborating {len(entry)} entry themes on a second source")
         detail = {r["name"]: r for r in kept}

@@ -211,10 +211,18 @@ def scoring_text(spec: dict) -> str:
               "Give a one-line reason for every mark, drawn only from the evidence. Resolve the marks "
               "into an overall fit, high, medium, or low, leaning on the weighted criteria.",
               "",
-              "Posture (themes only): enter, watch, or deepen. Enter marks a new or adjacent area worth "
-              "entering or piloting now, watch marks one to monitor and revisit, and deepen marks existing "
-              "work to keep current. Every existing theme is deepen; no existing theme may carry enter."]
+              spec_posture_text(spec)]
     return "\n".join(lines)
+
+
+_HORIZON_POSTURE_TEXT = (
+    "Posture (themes only): enter, watch, or deepen. Enter marks a new or adjacent area worth "
+    "entering or piloting now, watch marks one to monitor and revisit, and deepen marks existing "
+    "work to keep current. Every existing theme is deepen; no existing theme may carry enter.")
+
+
+def spec_posture_text(spec: dict) -> str:
+    return spec.get("posture_text") or _HORIZON_POSTURE_TEXT
 
 
 def excluded_areas(spec: dict) -> list[dict]:
@@ -239,6 +247,8 @@ def excluded_text(spec: dict) -> str:
 
 
 def scope_text(spec: dict) -> str:
+    if portfolio_mode(spec) == "baseline":
+        return spec.get("context", "") + (("\n\n" + spec["portfolio_text"]) if spec.get("portfolio_text") else "")
     return spec.get("context", "") + "\n\n" + excluded_text(spec)
 
 
@@ -297,6 +307,8 @@ def screen_existing(themes: list[dict], spec: dict) -> list[dict]:
     genuinely new theme. A single body hit is recorded as a near miss instead, for
     the analyst to look at.
     """
+    if portfolio_mode(spec) != "exclude":
+        return themes
     for t in themes:
         name = _norm_text(t.get("name", ""))
         body = _norm_text(t.get("name", ""), t.get("rationale", ""), t.get("marquee", ""),
@@ -395,8 +407,8 @@ def score_schema(spec: dict) -> dict:
 def themes_schema(spec: dict) -> dict:
     tprops = {
         "name": {"type": "string"},
-        "tag": {"type": "string", "enum": ["existing", "adjacent", "new"]},
-        "posture": {"type": "string", "enum": ["enter", "watch", "deepen"]},
+        "tag": {"type": "string", "enum": tags(spec)},
+        "posture": {"type": "string", "enum": postures(spec)},
         "rationale": {"type": "string"},
         "marquee": {"type": "string", "description": "One leading approach."},
         "members": {"type": "array", "items": {"type": "string"}},
@@ -452,6 +464,8 @@ def coerce_score(out: dict, spec: dict) -> tuple[dict, list[str]]:
 
 
 def coerce_theme(t: dict, spec: dict) -> dict:
+    if spec.get("postures") or spec.get("tags"):
+        return _coerce_theme_profile(t, spec)
     t = dict(t)
     tag = str(t.get("tag", "")).lower().strip()
     posture = str(t.get("posture", "")).lower().strip()
@@ -473,6 +487,28 @@ def coerce_theme(t: dict, spec: dict) -> dict:
     return t
 
 
+def _coerce_theme_profile(t: dict, spec: dict) -> dict:
+    """coerce_theme for a profile that sets its own postures and tags. An off-list
+    value falls to the profile's stated fallback (the most cautious posture and tag),
+    never to a promoting one."""
+    t = dict(t)
+    ps, ts = postures(spec), tags(spec)
+    fb = spec.get("fallback") or {}
+    tag = str(t.get("tag", "")).lower().strip()
+    posture = str(t.get("posture", "")).lower().strip()
+    if tag in ps and posture in ts:
+        tag, posture = posture, tag
+    t["tag"] = tag if tag in ts else fb.get("tag", ts[-1])
+    t["posture"] = posture if posture in ps else fb.get("posture", ps[-1])
+    for c in criteria(spec):
+        t[c["key"]] = _enum(t.get(c["key"]), _MARKS, "partial")
+    if not isinstance(t.get("members"), list):
+        t["members"] = []
+    for k, d in (("rationale", ""), ("marquee", ""), ("name", "Untitled theme"), ("top2", False)):
+        t.setdefault(k, d)
+    return t
+
+
 # --- persistence per run ---
 def save_spec(spec: dict, path) -> None:
     Path(path).write_text(json.dumps(spec, indent=2), encoding="utf-8")
@@ -481,3 +517,51 @@ def save_spec(spec: dict, path) -> None:
 def load_spec(path) -> dict:
     p = Path(path)
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else dict(DEFAULT_SPEC)
+
+
+# --- scan profiles: the scan-specific rules as data ---------------------------
+# Every accessor below returns TODAY's horizon behavior when the spec does not set
+# the key, and DEFAULT_SPEC deliberately does not set them. So the horizon scan's
+# saved spec, prompts, and outputs stay exactly as they were (tests/snapshots), and
+# a profile such as profiles/yes/profile.json changes the scan by setting keys, never
+# by editing code.
+HORIZON = "horizon"
+_HORIZON_POSTURES = ["enter", "watch", "deepen"]
+_HORIZON_TAGS = ["existing", "adjacent", "new"]
+_HORIZON_LEAD = {"count": 2, "postures": ["enter"], "tags": ["new", "adjacent"]}
+
+
+def profile_name(sp: dict) -> str:
+    return sp.get("profile") or HORIZON
+
+
+def prompt(sp: dict, name: str, default: str) -> str:
+    """An agent's instructions: the profile's version when it sets one, else the
+    horizon text kept in agents.py."""
+    return (sp.get("prompts") or {}).get(name) or default
+
+
+def postures(sp: dict) -> list[str]:
+    return list(sp.get("postures") or _HORIZON_POSTURES)
+
+
+def tags(sp: dict) -> list[str]:
+    return list(sp.get("tags") or _HORIZON_TAGS)
+
+
+def portfolio_mode(sp: dict) -> str:
+    """exclude: themes in the existing portfolio are screened to existing/deepen
+    (horizon). baseline: the portfolio is the starting point, nothing is screened."""
+    return sp.get("portfolio_mode") or "exclude"
+
+
+def drop_bands(sp: dict) -> list[str]:
+    """Reading bands dropped before scoring. Horizon drops maturing approaches, a
+    profile looking for proven designs sets this to []."""
+    v = sp.get("drop_bands")
+    return ["maturing"] if v is None else list(v)
+
+
+def lead_rule(sp: dict) -> dict:
+    """Which themes the memo leads with: how many, from which postures and tags."""
+    return {**_HORIZON_LEAD, **(sp.get("lead") or {})}

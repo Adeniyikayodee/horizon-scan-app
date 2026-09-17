@@ -19,7 +19,8 @@ def main() -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("init", help="write a sample input/organizations.xlsx")
-    sub.add_parser("status", help="show progress and errors")
+    st = sub.add_parser("status", help="show progress and errors")
+    st.add_argument("--profile", default=None, help="scan profile (default horizon)")
 
     pr = sub.add_parser("prune", help="delete all but the newest run folders under runs/")
     pr.add_argument("--keep", type=int, default=20, help="how many runs to keep (default 20)")
@@ -29,6 +30,7 @@ def main() -> None:
     ev.add_argument("--provider", choices=["anthropic", "openrouter"], default=None)
     ev.add_argument("--model", default=None, help="openrouter model id")
     ev.add_argument("--judge", type=Path, default=None, help="path to a memo .md to score on the rubric")
+    ev.add_argument("--profile", default=None, help="scan profile (default horizon)")
 
     run = sub.add_parser("run", help="run a stage")
     run.add_argument("--stage", type=int, choices=[1, 2], required=True)
@@ -42,8 +44,11 @@ def main() -> None:
                      help="openrouter model id when --provider openrouter, e.g. openai/gpt-5")
     run.add_argument("--scope", choices=["africa", "global"], default=None,
                      help="africa focus (default) or a global scan")
+    run.add_argument("--profile", default=None,
+                     help="scan profile under profiles/, e.g. yes (default: the horizon scan)")
 
     args = ap.parse_args()
+    config.use_profile(getattr(args, "profile", None))
 
     if args.cmd == "init":
         p = io_xlsx.write_sample_orgs()
@@ -86,7 +91,7 @@ def main() -> None:
             print(f"[openrouter] running every stage on {config.OR_MODEL}\n")
         config.require_key()
         if not config.ORG_SHEET.exists() and not args.only:
-            raise SystemExit("input/organizations.xlsx missing. Run: python -m scan init")
+            raise SystemExit(f"{config.ORG_SHEET} missing. Run: python -m scan init")
         if args.stage == 1:
             asyncio.run(pipeline.run_stage1(only=args.only))
         else:

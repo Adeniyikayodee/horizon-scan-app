@@ -11,6 +11,12 @@ from . import config, schemas, sources, spec
 from .client import TruncatedOutput, structured_call
 
 
+def _i(name: str, default: str) -> str:
+    """The instructions for one agent, from the active profile, with the horizon
+    text below as the default."""
+    return spec.prompt(config.active_spec(), name, default)
+
+
 def _frame(ctx: dict[str, str], parts: list[str], instructions: str) -> str:
     # the standing hard rules lead every frame, so no stage can drift from them
     blocks = [config.window_rule()]
@@ -308,8 +314,9 @@ def synth_instructions(sp: dict) -> str:
     definition, so the memo cannot be asked for at one length and checked at another,
     which is exactly what happened before: the frame said eight to twelve pages while
     context/output_spec.md said two to three."""
-    return (SYNTH_HEAD.format(target=spec.memo_target_text(sp),
-                              sections=spec.memo_sections_text(sp)) + SYNTH_TAIL)
+    head = spec.prompt(sp, "synth_head", SYNTH_HEAD)
+    tail = spec.prompt(sp, "synth_tail", SYNTH_TAIL)
+    return head.format(target=spec.memo_target_text(sp), sections=spec.memo_sections_text(sp)) + tail
 
 DISCOVER_I = """
 You are the Discovery scout. Given the research question and the lenses, propose
@@ -342,7 +349,7 @@ async def librarian(ctx: dict[str, str], org: dict[str, str], hint: str = "") ->
     if hint:
         user += "\n\n" + hint
     out = await structured_call(
-        model=config.MODEL_HAIKU, frame=_frame(ctx, ["mission", "scope"], LIBRARIAN_I),
+        model=config.MODEL_HAIKU, frame=_frame(ctx, ["mission", "scope"], _i("librarian", LIBRARIAN_I)),
         user=user, schema=schemas.LIBRARIAN_SCHEMA, web=True, effort="medium",
     )
     return out.get("reports", [])
@@ -353,7 +360,7 @@ async def scout(ctx: dict[str, str], org: dict[str, str], hint: str = "") -> dic
     if hint:
         user += "\n\n" + hint
     out = await structured_call(
-        model=config.MODEL_HAIKU, frame=_frame(ctx, ["mission", "scope"], SCOUT_I),
+        model=config.MODEL_HAIKU, frame=_frame(ctx, ["mission", "scope"], _i("scout", SCOUT_I)),
         user=user, schema=schemas.SCOUT_SCHEMA, web=True, effort="medium",
     )
     cands = []
@@ -366,7 +373,7 @@ async def scout(ctx: dict[str, str], org: dict[str, str], hint: str = "") -> dic
 
 
 async def read(ctx: dict[str, str], cand: dict[str, str]) -> dict[str, Any]:
-    frame = _frame(ctx, ["mission"], READER_I)
+    frame = _frame(ctx, ["mission"], _i("reader", READER_I))
     url = cand.get("url", "")
     # actually read the document: fetch its text (HTML or extracted PDF), capped
     doc, full_len = (("", 0) if config.DRY_RUN else
@@ -415,7 +422,7 @@ async def score(ctx: dict[str, str], approach: dict[str, Any]) -> dict[str, Any]
             f"Quoted lines: {approach.get('quotes', [])}")
     sp = config.active_spec()
     out = await structured_call(
-        model=config.MODEL_SONNET, frame=_frame(ctx, ["mission", "scope", "scoring"], SCORER_I),
+        model=config.MODEL_SONNET, frame=_frame(ctx, ["mission", "scope", "scoring"], _i("scorer", SCORER_I)),
         user=user, schema=spec.score_schema(sp), effort="low", tier="strong",
     )
     dumped, coerced = spec.coerce_score(out, sp)
@@ -443,7 +450,7 @@ async def verify(ctx: dict[str, str], approach: dict[str, Any]) -> dict[str, Any
     # when the document is in hand, verify against it on the strong model, no web
     # needed; only fall back to a cheap web search when the document could not be read
     out = await structured_call(
-        model=config.MODEL_SONNET, frame=_frame(ctx, ["mission"], VERIFIER_I),
+        model=config.MODEL_SONNET, frame=_frame(ctx, ["mission"], _i("verifier", VERIFIER_I)),
         user=user, schema=schemas.VERIFY_SCHEMA, web=(not doc), effort="medium",
         tier="strong",
     )
@@ -454,18 +461,32 @@ async def verify(ctx: dict[str, str], approach: dict[str, Any]) -> dict[str, Any
     return dumped
 
 
+_HORIZON_KEYS = ["mandate_fit", "research_to_policy", "african_traction", "white_space"]
+
+
+def _scores_line(s: dict[str, Any]) -> str:
+    """The marks the Auditor checks. Built from the active criteria, so a profile
+    with its own criteria shows the Auditor real marks. The horizon wording is kept
+    exactly for the horizon criteria."""
+    crit = spec.criteria(config.active_spec())
+    if [c["key"] for c in crit] == _HORIZON_KEYS:
+        return (f"mandate {s.get('mandate_fit','')}, policy {s.get('research_to_policy','')}, "
+                f"traction {s.get('african_traction','')}, white space {s.get('white_space','')}, "
+                f"overall {s.get('overall','')}")
+    marks = ", ".join(f"{c['name']} {s.get(c['key'], '')}" for c in crit)
+    return f"{marks}, overall {s.get('overall','')}"
+
+
 async def audit(ctx: dict[str, str], row: dict[str, Any]) -> dict[str, Any]:
     s = row.get("score", {})
     v = row.get("verification", {})
     user = (f"Approach: {row.get('name','')}\nWhat: {row.get('what','')}\n"
             f"Evidence: {row.get('evidence','')}\nQuoted lines: {row.get('quotes', [])}\n"
-            f"Scores: mandate {s.get('mandate_fit','')}, policy {s.get('research_to_policy','')}, "
-            f"traction {s.get('african_traction','')}, white space {s.get('white_space','')}, "
-            f"overall {s.get('overall','')}\n"
+            f"Scores: {_scores_line(s)}\n"
             f"Verification: status {v.get('status','')}, claim_supported {v.get('claim_supported','')}, "
             f"confirming quote: {v.get('confirming_quote','')}\nSource: {row.get('url','')}")
     out = await structured_call(
-        model=config.MODEL_SONNET, frame=_frame(ctx, ["mission", "scoring"], AUDIT_I),
+        model=config.MODEL_SONNET, frame=_frame(ctx, ["mission", "scoring"], _i("auditor", AUDIT_I)),
         user=user, schema=schemas.AUDIT_SCHEMA, effort="low", tier="strong",
     )
     dumped = schemas.Audit(**_coerce_audit(out)).model_dump()
@@ -503,7 +524,7 @@ async def corroborate(ctx: dict[str, str], claim: str) -> dict[str, Any]:
     """Look for an independent second source that confirms a claim, so a key finding
     does not rest on a single source."""
     out = await structured_call(
-        model=config.MODEL_SONNET, frame=_frame(ctx, ["mission"], CORROBORATE_I),
+        model=config.MODEL_SONNET, frame=_frame(ctx, ["mission"], _i("corroborate", CORROBORATE_I)),
         user=f"Claim to corroborate on a second, independent source:\n{claim}",
         schema=CORROBORATE_SCHEMA, web=True, effort="medium",
     )
@@ -551,7 +572,7 @@ async def discover(ctx: dict[str, str], n: int = 25) -> list[dict[str, Any]]:
     user = (f"Research question: {sp.get('research_question','')}\n"
             f"Propose up to {n} organizations whose recent work fits this question and the lenses.")
     out = await structured_call(
-        model=config.MODEL_SONNET, frame=_frame(ctx, ["mission", "scope"], DISCOVER_I),
+        model=config.MODEL_SONNET, frame=_frame(ctx, ["mission", "scope"], _i("discover", DISCOVER_I)),
         user=user, schema=spec.DISCOVER_SCHEMA, web=True, effort="medium",
     )
     return out.get("organizations", [])
@@ -575,7 +596,7 @@ async def frame_orgs(ctx: dict[str, str], names: list[str]) -> list[dict[str, An
         return []
     user = "Organizations to frame:\n" + "\n".join(f"- {n}" for n in names)
     out = await structured_call(
-        model=config.MODEL_HAIKU, frame=_frame(ctx, ["mission", "scope"], FRAME_ORGS_I),
+        model=config.MODEL_HAIKU, frame=_frame(ctx, ["mission", "scope"], _i("frame_orgs", FRAME_ORGS_I)),
         user=user, schema=spec.DISCOVER_SCHEMA, web=False, effort="low",
     )
     return out.get("organizations", [])
@@ -587,7 +608,7 @@ async def themes(ctx: dict[str, str], rows: list[dict[str, Any]], hunches: str) 
     user = "Kept approaches:\n" + "\n".join(lines) + f"\n\nAnalyst hunches:\n{hunches}"
     out = await structured_call(
         model=config.MODEL_OPUS,
-        frame=_frame(ctx, ["mission", "scope", "scoring", "themes", "exemplar"], THEMER_I),
+        frame=_frame(ctx, ["mission", "scope", "scoring", "themes", "exemplar"], _i("themer", THEMER_I)),
         user=user, schema=spec.themes_schema(sp), max_tokens=8192, effort="high", tier="strong",
     )
     return [spec.coerce_theme(t, sp) for t in out.get("themes", [])]

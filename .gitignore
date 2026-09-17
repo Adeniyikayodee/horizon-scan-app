@@ -15,3 +15,6 @@ runs/
 EVALUATION.md
 HOW_THE_AGENTS_WORK.md
 IMPROVEMENT.md
+
+# per-profile run files
+profiles/*/run/
