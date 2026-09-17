@@ -215,7 +215,7 @@ def _read_evidence(subj: str, h: int) -> dict[str, Any]:
             "outcome_quote": "Employment rose among participants.",
             "effect_summary": "Employment rose by a measured amount.", "sample": "1,000 young people",
             "countries": ["Ghana"], "year": "2021", "evaluator": "An independent research group",
-            "independent": True, "funders": ["A foundation"], "funder_quote": "Funded by a foundation.",
+            "independent": True, "peer_reviewed": False, "funders": ["A foundation"], "funder_quote": "Funded by a foundation.",
             "cost_per_outcome": "not found", "cost_quote": "", "model_level": "E4" if rct else "E2"}
 
 

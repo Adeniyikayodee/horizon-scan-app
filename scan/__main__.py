@@ -71,6 +71,17 @@ def main() -> None:
             config.OR_MODEL = args.model
         config.require_key()
         from . import evaluate
+        golden = config.PROFILES_DIR / (args.profile or "") / "golden.json"
+        if args.profile and config.active_spec().get("evidence") and golden.exists():
+            res = asyncio.run(evaluate.evidence_eval(golden))
+            report = evaluate.evidence_report(res)
+            out = config.REVIEW_DIR / "evidence_accuracy.md"
+            out.write_text(report, encoding="utf-8")
+            print(report)
+            print(f"written to {out}")
+            if not res["passed"]:
+                raise SystemExit(1)
+            return
         rows = asyncio.run(evaluate.trajectory())
         evaluate.print_trajectory(rows)
         if args.judge:

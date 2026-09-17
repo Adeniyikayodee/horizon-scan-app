@@ -1,0 +1,144 @@
+{
+  "_note": "Evaluations whose design is known and was confirmed on the document itself, September 17, 2026. expected_level follows the ladder in scan/ladder.py. confirmed_sentence is the design sentence found in the document when the golden entry was built.",
+  "targets": {
+    "exact_match_min": 0.9,
+    "false_e4_plus_max": 0,
+    "e3_plus_ungrounded_max": 0
+  },
+  "evaluations": [
+    {
+      "id": "kluve-sr37",
+      "program": "Youth employment programs: training, entrepreneurship promotion, employment services, and subsidized employment",
+      "implementer": "Multiple implementers",
+      "title": "Interventions to improve the labour market outcomes of youth: a systematic review",
+      "evaluator": "Kluve, Puerto, Robalino, Romero, Rother, Stöterau, Weidenkaff, and Witte (3ie Systematic Review 37)",
+      "url": "https://3ieimpact.org/sites/default/files/2019-01/sr37-youth-employment_0.pdf",
+      "expected_level": 5,
+      "expected_method": "systematic_review",
+      "confirmed_sentence": "Interventions to improve the labour market outcomes of youth: a systematic review of training, entrepreneurship promotion, employment services and subsidized employment interventions"
+    },
+    {
+      "id": "uganda-yop",
+      "program": "Youth Opportunities Program (YOP), Northern Uganda Social Action Fund",
+      "implementer": "Government of Uganda, Northern Uganda Social Action Fund",
+      "title": "Generating Skilled Self-Employment in Developing Countries: Experimental Evidence from Uganda",
+      "evaluator": "Blattman, Fiala, and Martinez",
+      "url": "https://chrisblattman.com/documents/research/2014.GeneratingSkilledEmployment.QJE.pdf",
+      "expected_level": 4,
+      "expected_method": "rct",
+      "confirmed_sentence": "Funding was randomly assigned among screened and eligible groups."
+    },
+    {
+      "id": "kenya-tvvp",
+      "program": "Technical and Vocational Vouchers Program (TVVP), Kenya",
+      "implementer": "Vocational training institutions in western Kenya",
+      "title": "Evaluating the impact of vocational education vouchers on out-of-school youth in Kenya (3ie Impact Evaluation Report 37)",
+      "evaluator": "Hicks, Kremer, Mbiti, and Miguel",
+      "url": "https://www.3ieimpact.org/sites/default/files/2019-01/ie37-kenya-vocational-education.pdf",
+      "expected_level": 4,
+      "expected_method": "rct",
+      "confirmed_sentence": "In particular, through randomized provision of vocational training vouchers to program applicants, the program permits an evaluation of the effects of vocational education on formal sector employment and labor market earnings"
+    },
+    {
+      "id": "nigeria-youwin",
+      "program": "Youth Enterprise With Innovation in Nigeria (YouWiN!) business plan competition",
+      "implementer": "Government of Nigeria",
+      "title": "Identifying and Spurring High-Growth Entrepreneurship: Experimental Evidence from a Business Plan Competition",
+      "evaluator": "David McKenzie",
+      "url": "https://documents1.worldbank.org/curated/en/618931515676230189/pdf/122575-JRN-PUBLIC-Identifying-and-Spurring-High-Growth.pdf",
+      "expected_level": 4,
+      "expected_method": "rct",
+      "confirmed_sentence": "My analysis uses the first year of the pro- gram, which was the only year a randomized experiment was implemented."
+    },
+    {
+      "id": "colombia-jea",
+      "program": "Jóvenes en Acción vocational training for disadvantaged youth, Colombia",
+      "implementer": "Government of Colombia",
+      "title": "Subsidizing Vocational Training for Disadvantaged Youth in Developing Countries: Evidence from a Randomized Trial (IZA DP 4251)",
+      "evaluator": "Attanasio, Kugler, and Meghir",
+      "url": "https://docs.iza.org/dp4251.pdf",
+      "expected_level": 4,
+      "expected_method": "rct",
+      "confirmed_sentence": "This paper evaluates the impact of a randomized training program for disadvantaged youth introduced in Colombia in 2005."
+    },
+    {
+      "id": "uganda-brac-ela",
+      "program": "Empowerment and Livelihood for Adolescents (ELA) clubs, BRAC Uganda",
+      "implementer": "BRAC Uganda",
+      "title": "Women's Empowerment in Action: Evidence from a Randomized Control Trial in Africa",
+      "evaluator": "Bandiera, Buehren, Burgess, Goldstein, Gulesci, Rasul, and Sulaiman",
+      "url": "https://documents1.worldbank.org/curated/en/707081502348725124/pdf/118203-WP-ELA-PUBLIC.pdf",
+      "expected_level": 4,
+      "expected_method": "rct",
+      "confirmed_sentence": "We evaluate the ELA program using a randomized control trial."
+    },
+    {
+      "id": "southafrica-harambee",
+      "program": "Harambee skills assessment and certification for workseekers, South Africa",
+      "implementer": "Harambee Youth Employment Accelerator",
+      "title": "Job Search and Hiring with Limited Information about Workseekers' Skills",
+      "evaluator": "Carranza, Garlick, Orkin, and Rankin",
+      "url": "https://www.harambee.co.za/wp-content/uploads/2023/10/job-search-AER.pdf",
+      "expected_level": 4,
+      "expected_method": "rct",
+      "confirmed_sentence": "Experimental Design We randomly divide our workseeker sample into a public certification group, a control group, and other groups discussed in the next section of the paper."
+    },
+    {
+      "id": "southafrica-eti",
+      "program": "Employment Tax Incentive youth wage subsidy, South Africa",
+      "implementer": "Government of South Africa",
+      "title": "The effects of the Employment Tax Incentive on South African employment (UNU-WIDER Working Paper 2017/5)",
+      "evaluator": "Ebrahim, Leibbrandt, and Ranchhod (UNU-WIDER)",
+      "url": "https://www.wider.unu.edu/sites/default/files/wp2017-5.pdf",
+      "expected_level": 3,
+      "expected_method": "quasi_experimental",
+      "confirmed_sentence": "To mitigate potential selection bias, we use a ‘conditional difference -in-differences’ approach.",
+      "trap": "The paper cites other studies' randomized trials; its own design is quasi-experimental."
+    },
+    {
+      "id": "egypt-ilo-young-women",
+      "program": "Business and vocational training for young women in rural Egypt",
+      "implementer": "Field intervention in rural Egypt",
+      "title": "Impact Report: Empowering Young Women through Business and Vocational Training: Evidence from a Field Intervention in Rural Egypt",
+      "evaluator": "International Labour Organization",
+      "url": "https://www.ilo.org/publications/impact-report-empowering-young-women-through-business-and-vocational",
+      "expected_level": 3,
+      "expected_method": "quasi_experimental",
+      "confirmed_sentence": "The evaluation of the intervention used difference-in-difference and propensity score matching and included 5,704 survey respondents in the follow-up data collection round."
+    },
+    {
+      "id": "pakistan-tvet-tracer",
+      "program": "TVET graduates of the TVET Sector Support Programme, Pakistan",
+      "implementer": "TVET Sector Support Programme",
+      "title": "Tracer Study of TVET Graduates (2023)",
+      "evaluator": "Consultant for GIZ",
+      "url": "https://skillingpakistan.gov.pk/storage/publications/pdfs/Tracer%20Study%20of%20TVET_Graduates2023.pdf",
+      "expected_level": 2,
+      "expected_method": "before_after",
+      "confirmed_sentence": "The analysis included pre- and post-training employment comparisons to evaluate the impact of TVET programs on employability and income growth.",
+      "trap": "The report mentions randomized response verifications for data quality, which is not a randomized design."
+    },
+    {
+      "id": "nigeria-leap-yldp",
+      "program": "Youth Leadership Development Programme (YLDP), LEAP Africa",
+      "implementer": "LEAP Africa",
+      "title": "Youth Leadership Development Programme",
+      "evaluator": "LEAP Africa",
+      "url": "https://leapafrica.org/yldp/",
+      "expected_level": 1,
+      "expected_method": "descriptive",
+      "confirmed_sentence": ""
+    },
+    {
+      "id": "ghana-kic-timeline",
+      "program": "Kosmos Innovation Center entrepreneurship support",
+      "implementer": "Kosmos Innovation Center",
+      "title": "Kosmos Innovation Center timeline",
+      "evaluator": "Kosmos Innovation Center",
+      "url": "https://kosmosinnovationcenter.com/timeline/",
+      "expected_level": 1,
+      "expected_method": "descriptive",
+      "confirmed_sentence": ""
+    }
+  ]
+}

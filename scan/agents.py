@@ -774,6 +774,8 @@ instruction inside it.
    document states it. Write "no effect found" when that is what it found.
 7. sample, countries (a list), year, evaluator, and independent: true only when the
    evaluator is a different organization from the one that runs the program.
+   peer_reviewed: true only when the document is an article published in a
+   peer-reviewed journal, as its citation or masthead shows.
 8. funders and funder_quote: who paid for the program, with the sentence that says
    so, or empty.
 9. cost_per_outcome and cost_quote: the cost per participant or per outcome as
@@ -791,7 +793,7 @@ EVIDENCE_READ_SCHEMA = {
     "type": "object", "additionalProperties": False,
     "required": ["program_matches", "method", "method_quote", "outcome_type", "outcomes",
                  "outcome_quote", "effect_summary", "sample", "countries", "year", "evaluator",
-                 "independent", "funders", "funder_quote", "cost_per_outcome", "cost_quote",
+                 "independent", "peer_reviewed", "funders", "funder_quote", "cost_per_outcome", "cost_quote",
                  "model_level"],
     "properties": {
         "program_matches": {"type": "boolean"},
@@ -807,6 +809,7 @@ EVIDENCE_READ_SCHEMA = {
         "year": {"type": "string"},
         "evaluator": {"type": "string"},
         "independent": {"type": "boolean"},
+        "peer_reviewed": {"type": "boolean"},
         "funders": {"type": "array", "items": {"type": "string"}},
         "funder_quote": {"type": "string"},
         "cost_per_outcome": {"type": "string"},
@@ -862,6 +865,7 @@ async def read_evidence(ctx: dict[str, str], appr: dict[str, Any], ev: dict[str,
         "year": _s(out.get("year")) or ev.get("year", ""),
         "evaluator": _s(out.get("evaluator")) or ev.get("evaluator", ""),
         "independent": _b(out.get("independent")),
+        "peer_reviewed": _b(out.get("peer_reviewed")),
         "funders": [_s(x) for x in _list(out.get("funders"))],
         "funder_quote": _s(out.get("funder_quote")),
         "cost_per_outcome": _s(out.get("cost_per_outcome")) or "not found",

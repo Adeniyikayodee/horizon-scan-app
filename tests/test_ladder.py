@@ -235,3 +235,51 @@ def test_read_evidence_keeps_the_models_level(monkeypatch):
     monkeypatch.setattr(pipeline.agents, "structured_call", fake)
     r = asyncio.run(pipeline.agents.read_evidence({}, {"name": "P"}, {"url": "u"}, "text"))
     assert r["model_level"] == "E4" and r["method"] == "rct"
+
+
+def test_peer_reviewed_counts_as_independent():
+    g = ladder.grade(_ev(evaluator="Harambee", independent=False, peer_reviewed=True),
+                     implementer="Harambee", method_grounded=True)
+    assert g["level"] == 4
+
+
+def test_golden_eval_scoring(monkeypatch, tmp_path):
+    """The accuracy check's arithmetic, with the model and the network stubbed."""
+    import json as _json
+    from scan import agents as _agents, evaluate
+    golden = {"targets": {"exact_match_min": 0.9, "false_e4_plus_max": 0, "e3_plus_ungrounded_max": 0},
+              "evaluations": [
+                  {"id": "rct", "program": "P", "implementer": "Gov", "title": "T", "evaluator": "Uni",
+                   "url": "https://x.org/a", "expected_level": 4},
+                  {"id": "tracer", "program": "P", "implementer": "Gov", "title": "T", "evaluator": "Gov",
+                   "url": "https://x.org/b", "expected_level": 2}]}
+    path = tmp_path / "golden.json"
+    path.write_text(_json.dumps(golden))
+    monkeypatch.setattr(sources, "fetch_text", lambda url, n=None: "text")
+    monkeypatch.setattr(sources, "quote_exact", lambda url, q: True)
+    readings = {
+        "https://x.org/a": {"method": "rct", "model_level": "E4", "method_quote": "Participants were randomly assigned.",
+                            "independent": True, "outcome_type": "outcomes", "program_matches": True},
+        # the trap: data checks were randomized, the design is before and after
+        "https://x.org/b": {"method": "before_after", "model_level": "E4",
+                            "method_quote": "We ran randomized response verifications.",
+                            "independent": False, "outcome_type": "outcomes", "program_matches": True},
+    }
+
+    async def fake_read(ctx, appr, ev, doc):
+        return {"outcome_quote": "", "peer_reviewed": False, **readings[ev["url"]]}
+    monkeypatch.setattr(_agents, "read_evidence", fake_read)
+    res = asyncio.run(evaluate.evidence_eval(path))
+    assert [r["graded"] for r in res["rows"]] == [4, 2]
+    assert res["passed"] and res["false_e4_plus"] == []
+    assert "PASS" in evaluate.evidence_report(res)
+
+
+def test_golden_file_is_well_formed():
+    import json as _json
+    from pathlib import Path
+    g = _json.loads((Path(__file__).resolve().parent.parent / "profiles" / "yes" / "golden.json").read_text())
+    ev = g["evaluations"]
+    assert 12 <= len(ev) <= 15
+    assert {e["expected_level"] for e in ev} == {1, 2, 3, 4, 5}
+    assert all(e["url"].startswith("https://") for e in ev)

@@ -101,7 +101,8 @@ def grade(ev: dict[str, Any], implementer: str, method_grounded: bool | None,
     Rules, each a cap, the lowest one wins:
       1. the method sentence must be found word for word in the evaluation, else E2
       2. the level cannot exceed what the method words in that sentence support
-      3. E4 and E5 need an evaluator independent of the implementer, else E3
+      3. E4 and E5 need independence: an evaluator from a different organization
+         than the implementer, or a peer-reviewed publication, else E3
       4. an evaluation that measures only outputs is capped at E2
       5. an evaluation of a different program counts for nothing, E1
     and the model's own level is a ceiling too."""
@@ -118,7 +119,8 @@ def grade(ev: dict[str, Any], implementer: str, method_grounded: bool | None,
     level = min(level, code_level)
 
     evaluator = str(ev.get("evaluator", ""))
-    independent = bool(ev.get("independent")) and not _same_body(evaluator, implementer)
+    independent = ((bool(ev.get("independent")) and not _same_body(evaluator, implementer))
+                   or bool(ev.get("peer_reviewed")))
     if level >= 4 and not independent:
         caps.append("evaluator not independent of the implementer, capped at E3")
         level = 3

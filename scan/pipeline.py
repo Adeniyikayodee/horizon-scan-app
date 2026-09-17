@@ -467,6 +467,7 @@ async def _evidence_for(ctx, org: dict[str, str], appr: dict[str, Any], evcfg: d
             continue
         if ev.get("own"):
             r["independent"] = False       # the program's own document is never independent
+            r["peer_reviewed"] = False
         # quote_exact never fetches a placeholder link, so this is safe in a dry run too
         mg = await asyncio.to_thread(sources.quote_exact, url, r["method_quote"])
         og = await asyncio.to_thread(sources.quote_exact, url, r["outcome_quote"])
