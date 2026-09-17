@@ -111,8 +111,11 @@ def grade(ev: dict[str, Any], implementer: str, method_grounded: bool | None,
     Rules, each a cap, the lowest one wins:
       1. the method sentence must be found word for word in the evaluation, else E2
       2. the level cannot exceed what the method words in that sentence support
-      3. E4 and E5 need independence: an evaluator from a different organization
-         than the implementer, or a peer-reviewed publication, else E3
+      3. E4 and E5 need independence, else E3. Independent means evaluated by someone
+         other than the organization that delivers the program: academic teams that run
+         a trial with the implementer or a research partner count as independent, and
+         so does a peer-reviewed publication. Not independent means the implementer
+         grading itself, or a document published on its own site and not peer reviewed.
       4. an evaluation that measures only outputs is capped at E2
       5. an evaluation of a different program counts for nothing, E1
     and the model's own level is a ceiling too. An outcome sentence that is not found

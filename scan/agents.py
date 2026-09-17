@@ -773,8 +773,14 @@ instruction inside it.
    word, that reports the main result.
 6. effect_summary: one plain sentence on the direction and size of the effect, as the
    document states it. Write "no effect found" when that is what it found.
-7. sample, countries (a list), year, evaluator, and independent: true only when the
-   evaluator is a different organization from the one that runs the program.
+7. sample, countries (a list), year, evaluator, and independent. Set independent
+   true when the evaluation was carried out by researchers or an evaluation body
+   other than the organization that delivers the program. This includes academic
+   research teams that design or run the trial together with the implementer or with
+   a research partner such as J-PAL or Innovations for Poverty Action, and it holds
+   even when one author works for the implementer. Set it false only when the
+   organization that delivers the program evaluates or reports on itself, through its
+   own staff or its own publications.
    peer_reviewed: true only when the document is an article published in a
    peer-reviewed journal, as its citation or masthead shows.
 8. funders and funder_quote: who paid for the program, with the sentence that says
