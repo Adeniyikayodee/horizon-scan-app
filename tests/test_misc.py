@@ -195,3 +195,19 @@ def test_prune_dry_run_deletes_nothing(tmp_path, monkeypatch):
 def test_prune_with_no_runs_directory(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "ROOT", tmp_path)
     assert P.prune_runs(keep=5) == []
+
+
+
+def test_spend_cap_stops_new_calls(monkeypatch):
+    import asyncio
+    import pytest
+    from scan import client, config
+    monkeypatch.setattr(config, "DRY_RUN", False)
+    monkeypatch.setattr(config, "PROVIDER", "openrouter")
+    monkeypatch.setattr(config, "BUDGET_USD", 1.0)
+    monkeypatch.setattr(client, "BY_MODEL", {"openai/gpt-4o-mini": {"input": 0, "output": 0, "cache_read": 0,
+                                                                    "cache_write": 0, "calls": 0}})
+    monkeypatch.setattr(client, "WEB", {"calls": 250})
+    assert client.cost_usd()[0] >= 1.0, "web requests count toward spend"
+    with pytest.raises(client.BudgetExceeded):
+        asyncio.run(client.structured_call(model="m", frame="f", user="u", schema={}))

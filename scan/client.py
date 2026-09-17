@@ -28,6 +28,11 @@ _or_client: Any = None
 
 # running token account for the process, so a run's spend is visible instead of blind
 USAGE = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "calls": 0}
+WEB = {"calls": 0}
+
+
+class BudgetExceeded(RuntimeError):
+    """The run reached its spend cap (config.BUDGET_USD)."""
 
 
 class TruncatedOutput(RuntimeError):
@@ -84,7 +89,16 @@ def cost_usd() -> tuple[float, list[str]]:
                   + u["cache_read"] * pin * config.CACHE_READ_MULT
                   + u["cache_write"] * pin * config.CACHE_WRITE_MULT
                   + u["output"] * pout) / 1_000_000
+    if config.PROVIDER == "openrouter":
+        total += WEB["calls"] * config.WEB_CALL_USD
     return round(total, 4), sorted(unpriced)
+
+
+def check_budget() -> None:
+    if config.BUDGET_USD and not config.DRY_RUN:
+        spent, _ = cost_usd()
+        if spent >= config.BUDGET_USD:
+            raise BudgetExceeded(f"spend cap of ${config.BUDGET_USD:.2f} reached (about ${spent:.2f} spent)")
 
 
 def usage_line() -> str:
@@ -145,6 +159,7 @@ async def _openrouter_call(
     body: dict[str, Any] = {}
     if web:
         body["plugins"] = [{"id": "web", "max_results": config.WEB_MAX_USES}]
+        WEB["calls"] += 1
     resp = await or_client().chat.completions.create(
         model=or_model or config.OR_MODEL,
         max_tokens=max_tokens,
@@ -229,6 +244,7 @@ async def structured_call(
     memo and scores while the cheap model keeps the web search."""
     if config.DRY_RUN:
         return mock.mock_response(schema, user)
+    check_budget()
     if config.PROVIDER == "openrouter":
         # auto-route: an Anthropic model runs best natively (iterative web_search +
         # caching); only fall back to OpenRouter's plugin when there is no Anthropic key.

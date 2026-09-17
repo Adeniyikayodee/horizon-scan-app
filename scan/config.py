@@ -53,6 +53,15 @@ OR_MODEL_STRONG = os.environ.get("OR_MODEL_STRONG", "anthropic/claude-sonnet-4")
 OR_REFERER = os.environ.get("OR_REFERER", "https://acet-horizon-scan.local")
 OR_TITLE = os.environ.get("OR_TITLE", "ACET Horizon Scan")
 
+# Web search on OpenRouter is billed per request on top of tokens: about $4 per 1,000
+# results, and each request asks for WEB_MAX_USES results. Counted so spend is honest.
+WEB_CALL_USD = float(os.environ.get("WEB_CALL_USD", str(0.004 * int(os.environ.get("WEB_MAX_USES", "6")))))
+
+# A hard spend cap per run, in US dollars. 0 means no cap. When the priced spend reaches
+# it, further model calls raise BudgetExceeded, which the pipeline records as an error,
+# so the organizations not reached are scanned again on the next run.
+BUDGET_USD = float(os.environ.get("SCAN_BUDGET_USD", "0"))
+
 # Concurrency for the per-org fan-out.
 MAX_CONCURRENCY = int(os.environ.get("MAX_CONCURRENCY", "8"))
 MAX_TOOL_TURNS = int(os.environ.get("MAX_TOOL_TURNS", "8"))
