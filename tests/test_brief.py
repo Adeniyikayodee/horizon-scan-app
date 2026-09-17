@@ -181,3 +181,27 @@ def test_min_sentence_words_is_part_of_the_check():
     md = "# T\n\n## What we found\n\nThe program works. It trains young people."
     assert any("short sentence" in i for i in plain.check(md, {"min_sentence_words": 7}))
     assert not any("short sentence" in i for i in plain.check(md, {}))
+
+
+def test_names_do_not_inflate_the_reading_grade():
+    plain_text = "The German agency works with young people in Rwanda and Uganda on training for jobs."
+    named = ("The Deutsche Gesellschaft für Internationale Zusammenarbeit works with young people in Rwanda "
+             "and Uganda on training for jobs.")
+    assert plain.reading_grade(named) - plain.reading_grade(plain_text) < 2
+
+
+def test_method_talk_is_caught():
+    assert plain.method_talk_hits("This reflects a gap in our current search methodology.")
+    assert plain.method_talk_hits("None of these funders had open calls identified during this scan period.")
+    assert plain.method_talk_hits("Young women earned more after the training.") == []
+
+
+def test_every_theme_must_be_named():
+    md = "## Other options\n\nTVET at secondary level had one option. Secondary education had two."
+    hits = plain.theme_coverage_hits(md, ["TVET at secondary level", "Secondary education", "Financing education"])
+    assert hits == ["theme not covered by name: Financing education"]
+
+
+def test_an_organizations_own_acronym_name_is_allowed():
+    assert plain.acronym_hits("GIF funds innovation.", {"GIF"}) == []
+    assert plain.acronym_hits("GIF funds innovation.") == ["acronym not spelled out at first use: GIF"]

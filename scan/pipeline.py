@@ -74,9 +74,13 @@ def _window_label(tier: str = "program") -> str:
     return f"{lo}-{hi}"
 
 
-def _best_report(cand: dict, reports: list[dict]) -> dict | None:
+def _best_report(cand: dict, reports: list[dict], used: set[str] | None = None) -> dict | None:
     """Pick the report whose title/URL best matches this candidate, so the Reader
-    reads the actual report rather than the landing page. None if no good match."""
+    reads the actual report rather than the landing page. None if no good match.
+
+    A report already matched to another candidate of the same organization is not
+    offered again: two programs read from one page came out as the same program with
+    each other's design, target group, and evidence."""
     text = (cand.get("name", "") + " " + cand.get("one_liner", "")).lower()
     toks = set(re.findall(r"[a-z]{4,}", text))
     if not toks:
@@ -86,7 +90,8 @@ def _best_report(cand: dict, reports: list[dict]) -> dict | None:
         blob = (str(r.get("title", "")) + " " + str(r.get("url", ""))).lower()
         return sum(1 for w in toks if w in blob)
 
-    ranked = sorted([r for r in reports if r.get("url")], key=overlap, reverse=True)
+    ranked = sorted([r for r in reports if r.get("url") and r["url"] not in (used or set())],
+                    key=overlap, reverse=True)
     return ranked[0] if ranked and overlap(ranked[0]) >= 2 else None
 
 
@@ -218,9 +223,14 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
 
         # 2. read: read the matched report (not the landing page), extract the approach
         readings: list[dict[str, Any]] = []
+        # profiles that set one_report_per_candidate never read two programs from one
+        # report (the horizon scan keeps today's matching until that is decided)
+        used_reports: set[str] | None = set() if config.active_spec().get("one_report_per_candidate") else None
         for i, cand in enumerate(candidates, 1):
-            rep = _best_report(cand, reports)
+            rep = _best_report(cand, reports, used_reports)
             src = dict(cand)
+            if rep and used_reports is not None:
+                used_reports.add(rep["url"])
             if rep:
                 src["url"] = rep["url"]
                 src["report_title"] = rep.get("title", "")
@@ -844,9 +854,13 @@ async def run_stage2() -> None:
                 if r.get("evidence_record"):
                     rec = r["evidence_record"]
                     best = rec.get("best") or {}
+                    beste = max(rec.get("evaluations") or [{}], key=lambda e: e.get("level", 0))
                     d.update({"posture": r.get("posture", ""), "evidence_level": rec.get("label", ""),
-                              "effect": best.get("effect_summary", ""), "evaluation": best.get("title", ""),
-                              "evaluation_link": best.get("url", ""),
+                              "effect_as_recorded": best.get("effect_summary", "") or "not stated in the evaluation",
+                              "evaluation": best.get("title", ""), "evaluation_link": best.get("url", ""),
+                              "evaluation_independent": bool(beste.get("independent_checked")),
+                              "evaluation_countries": beste.get("countries", []),
+                              "evaluation_caps": beste.get("caps", []),
                               "cost_per_outcome": best.get("cost_per_outcome", ""),
                               "funders": rec.get("funders", [])})
                     d.update({k: r.get(k, "") for k in spec.reader_fields(config.active_spec())})
@@ -881,6 +895,24 @@ async def run_stage2() -> None:
 
     deliv = config.active_spec().get("deliverables")
     extra = ""
+    sp_now = config.active_spec()
+    if deliv and sp_now.get("themes_seed"):
+        extra += ("The ten YES themes, to be covered by these exact names and no others:\n"
+                  + "\n".join(f"- {t['name']}" for t in sp_now["themes_seed"]) + "\n\n")
+        extra += f"Options that passed review: {len(kept)}.\n\n"
+    if deliv and sp_now.get("brief_checks"):
+        # a brief built on few options is shorter, never padded: padding is where
+        # invented facts come from
+        few = int(sp_now.get("short_brief_below_options", 5))
+        if len(kept) < few:
+            sp_now["memo"] = {**sp_now["memo"], "min_words": 1200, "max_words": 2000}
+            sp_now["brief_checks"] = {**sp_now["brief_checks"], "target_words": 1600}
+            print(f"stage 2: only {len(kept)} option(s) passed review, so the brief targets about 1,600 words")
+        sp_now["brief_checks"] = {**sp_now["brief_checks"],
+                                  "theme_names": [t["name"] for t in sp_now.get("themes_seed") or []],
+                                  "allowed_acronyms": sorted({w for f in (funder_map or []) + [{"name": r.get("org", "")} for r in kept]
+                                                              for w in str(f.get("name", "")).split()
+                                                              if w.isupper() and len(w) >= 2})}
     if funder_map:
         top = [{"funder": f.get("name", ""), "fit": (f.get("fit") or {}).get("score"),
                 "themes": (f.get("fit") or {}).get("themes_matched"),
@@ -888,7 +920,7 @@ async def run_stage2() -> None:
                 "strategy": (f.get("strategy") or {}).get("value"),
                 "eligibility": (f.get("eligibility") or {}).get("value"),
                 "calls": f.get("calls", [])} for f in funder_map if not f.get("error")][:15]
-        extra = "Funders ranked by fit, from their own pages:\n" + json.dumps(top, ensure_ascii=False, indent=2)
+        extra += "Funders ranked by fit, from their own pages:\n" + json.dumps(top, ensure_ascii=False, indent=2)
     synth = await (agents.synthesize(ctx, themes, extra) if extra else agents.synthesize(ctx, themes))
     if deliv:
         await _write_profile_deliverables(deliv, synth, kept, themes, funder_map or [], top2)

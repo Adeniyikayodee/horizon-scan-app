@@ -68,3 +68,14 @@ def test_yes_dry_run_end_to_end(monkeypatch):
     assert postures == {"watch"}
     assert len(list(wb["Funder map"].iter_rows())) - 1 == 21
     assert not (out / "theme_scorecard.xlsx").exists()
+
+
+def test_one_report_per_candidate_in_the_yes_profile():
+    reports = [{"title": "Employment-focused subject in secondary schools evidence", "url": "https://e.org/evidence"}]
+    a = {"name": "Employment-focused subject", "one_liner": "secondary schools"}
+    b = {"name": "Livelihood bootcamps", "one_liner": "employment-focused support for young women outside secondary schools"}
+    used: set = set()
+    first = pipeline._best_report(a, reports, used)
+    used.add(first["url"])
+    assert pipeline._best_report(b, reports, used) is None
+    assert pipeline._best_report(b, reports, None) is not None, "the horizon scan keeps today's matching"

@@ -71,9 +71,23 @@ def syllables(word: str) -> int:
     return max(1, len(re.findall(r"[aeiouy]{1,2}", w)))
 
 
+def _plain_words(sentence: str) -> list[str]:
+    """The words a reader has to decode: names are left out. A capitalized word that
+    does not open the sentence is a name ("Deutsche Gesellschaft für Internationale
+    Zusammenarbeit"), and a name's syllables say nothing about how plain the writing is."""
+    ws = [w for w in words(sentence) if re.match(r"[A-Za-z]", w)]
+    return [w for i, w in enumerate(ws) if i == 0 or not w[0].isupper()]
+
+
 def reading_grade(text: str) -> float:
-    """Flesch-Kincaid grade level of the prose."""
+    """Flesch-Kincaid grade level of the prose, with names left out of the syllable
+    count (see _plain_words). Sentence length still counts every word."""
     sents = sentences(text)
+    ws = [w for s in sents for w in _plain_words(s)]
+    if sents and ws:
+        n_words = len(words(text))
+        syl = sum(syllables(w) for w in ws)
+        return round(0.39 * (n_words / len(sents)) + 11.8 * (syl / len(ws)) - 15.59, 1)
     ws = [w for w in words(text) if re.match(r"[A-Za-z]", w)]
     if not sents or not ws:
         return 0.0
@@ -107,12 +121,37 @@ def antithesis_hits(text: str) -> list[str]:
     return hits
 
 
-def acronym_hits(text: str) -> list[str]:
-    """An acronym must be spelled out at its first use, as 'Full Name (ACR)'."""
+METHOD_TALK = [r"\bsearch (methodology|methods?|process|strategy)\b", r"\bour (search|methodology|scan)\b",
+               r"\bdocumentation (reviewed|available)\b", r"\bavailable documentation\b", r"\bscan period\b",
+               r"\b(identified|found) (during|in) this scan\b", r"\bhigh standards we applied\b"]
+
+
+def method_talk_hits(text: str) -> list[str]:
+    """House rule: describe the findings, never how they were gathered."""
+    hits = []
+    for sent in sentences(text):
+        for pat in METHOD_TALK:
+            if re.search(pat, sent, re.I):
+                hits.append(f'describes how the work was done, state the finding instead: "{sent.strip()[:140]}"')
+                break
+    return hits
+
+
+def theme_coverage_hits(markdown: str, theme_names: list[str]) -> list[str]:
+    """Every theme in the fixed list is named in the brief, so none is dropped or
+    replaced by an invented one."""
+    norm = lambda s: re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
+    body = " " + norm(markdown) + " "
+    return [f"theme not covered by name: {t}" for t in theme_names if " " + norm(t) + " " not in body]
+
+
+def acronym_hits(text: str, allowed: set[str] | None = None) -> list[str]:
+    """An acronym must be spelled out at its first use, as 'Full Name (ACR)', unless the
+    organization's own name is that acronym."""
     hits, seen = [], set()
     for m in _ACRONYM.finditer(text):
         a = m.group(0)
-        if a in seen or a in _KNOWN or a.isdigit():
+        if a in seen or a in _KNOWN or a in (allowed or set()) or a.isdigit():
             continue
         seen.add(a)
         before = text[max(0, m.start() - 1):m.start()]
@@ -156,7 +195,14 @@ def check(markdown: str, cfg: dict[str, Any]) -> list[str]:
             issues.append(f"{n:,} words, the target is {target:,} within {int(tol * 100)} percent")
     if cfg.get("min_sentence_words"):
         issues += short_sentence_hits(text, int(cfg["min_sentence_words"]))
+    long_limit = int(cfg.get("long_sentence_words", 32))
+    long_ones = [s for s in sentences(text) if len(words(s)) > long_limit][:5]
+    issues += [f'long sentence ({len(words(s))} words), split it into two joined ideas: "{s.strip()[:120]}"'
+               for s in long_ones]
     issues += antithesis_hits(text)
-    issues += acronym_hits(text)
+    issues += method_talk_hits(text)
+    if cfg.get("theme_names"):
+        issues += theme_coverage_hits(markdown, cfg["theme_names"])
+    issues += acronym_hits(text, set(cfg.get("allowed_acronyms") or []))
     issues += house_hits(text)
     return issues
