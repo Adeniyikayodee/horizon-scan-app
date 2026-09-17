@@ -278,7 +278,7 @@ def test_cli_routing_by_stage(monkeypatch):
     monkeypatch.setattr(config, "CLI_ROUTE_MODE", "tiered")
     monkeypatch.setattr(config, "SPEC", None)
     assert client.cli_route("evidence_find") == ("claude-opus-5", "high")
-    assert client.cli_route("reader") == ("claude-sonnet-5", "medium")
+    assert client.cli_route("reader") == ("claude-opus-5", "medium")   # quotes must be verbatim
     assert client.cli_route("auditor")[0].startswith("claude-haiku")
     # an unlabelled step falls back to the single model and the call's own effort
     assert client.cli_route("", "low") == (config.CLI_MODEL, "low")

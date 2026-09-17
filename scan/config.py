@@ -77,9 +77,12 @@ CLI_ROUTING: dict[str, dict[str, str]] = {
     "themer": {"model": "claude-opus-5", "effort": "high"},
     "synthesizer": {"model": "claude-opus-5", "effort": "high"},
     "editor": {"model": "claude-opus-5", "effort": "high"},
-    "reader": {"model": "claude-sonnet-5", "effort": "medium"},
-    "evidence_read": {"model": "claude-sonnet-5", "effort": "medium"},
-    "verifier": {"model": "claude-sonnet-5", "effort": "medium"},
+    # The reading steps stay on the strongest model: their quotes must match the source
+    # word for word, and on Sonnet 5 two randomized trials were paraphrased and capped
+    # at E2 (accuracy check, September 17, 2026, profiles/yes/eval/).
+    "reader": {"model": "claude-opus-5", "effort": "medium"},
+    "evidence_read": {"model": "claude-opus-5", "effort": "medium"},
+    "verifier": {"model": "claude-opus-5", "effort": "medium"},
     "funder": {"model": "claude-sonnet-5", "effort": "medium"},
     "corroborate": {"model": "claude-sonnet-5", "effort": "medium"},
     "scout": {"model": "claude-sonnet-5", "effort": "low"},
