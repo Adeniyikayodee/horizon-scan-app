@@ -248,3 +248,26 @@ def test_claude_cli_provider_isolates_and_parses(monkeypatch):
 
     with pytest.raises(RuntimeError):
         client._parse_cli(_json.dumps({"subtype": "error_max_turns", "is_error": True, "result": "limit"}))
+
+
+def test_claude_cli_semaphore_survives_new_event_loops(monkeypatch):
+    import asyncio
+    import json as _json
+    from scan import client, config
+    monkeypatch.setattr(config, "DRY_RUN", False)
+    monkeypatch.setattr(config, "PROVIDER", "claude-cli")
+    monkeypatch.setattr(config, "BUDGET_USD", 0)
+
+    class Proc:
+        returncode = 0
+
+        async def communicate(self, data):
+            return (_json.dumps({"subtype": "success", "structured_output": {"ok": 1}, "usage": {}}).encode(), b"")
+
+    async def fake_exec(*a, **k):
+        return Proc()
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    for _ in range(2):   # the app's run_async: a new loop each time
+        loop = asyncio.new_event_loop()
+        assert loop.run_until_complete(client.structured_call(model="m", frame="f", user="u", schema={})) == {"ok": 1}
+        loop.close()

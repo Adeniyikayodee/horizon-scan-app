@@ -551,7 +551,13 @@ with st.sidebar:
     st.markdown('<div class="hs-eyebrow" style="margin-top:2px">Progress</div>', unsafe_allow_html=True)
     stepper(st.session_state.step)
     st.markdown('<div style="height:1px;background:var(--line);margin:14px 0"></div>', unsafe_allow_html=True)
-    config.PROVIDER = "openrouter"
+    ENGINES = {"Claude login, Opus 5 (this computer only)": "claude-cli", "OpenRouter": "openrouter"}
+    engine = st.radio("Engine", list(ENGINES), key="engine_pick",
+                      help="Claude login runs every step on Opus 5 through Claude Code on this computer, "
+                           "counted against your plan's usage limits. It is for your own runs; a version "
+                           "the team uses online needs an API key. OpenRouter uses the OpenRouter key and "
+                           "its balance.")
+    config.PROVIDER = ENGINES[engine]
     config.OR_MODEL = DEFAULT_MODEL
     SCANS = {"Horizon scan": None, "YES program scan": "yes"}
     picked = st.selectbox("Scan", list(SCANS), key="scan_pick",
@@ -743,15 +749,20 @@ if step >= 2:
 # --- scan summary: tiles + explorable evidence per organization ---
 if step >= 3:
     if st.session_state.get("n_rows", 0) == 0:
-        errmsg = ""
+        errs = []
         if config.MANIFEST.exists():
             m = json.loads(config.MANIFEST.read_text())
             errs = [v.get("error") for v in m.values() if v.get("error")]
-            errmsg = errs[0] if errs else ""
-        if errmsg:
-            st.error("This run failed, every organization errored. First error: " + errmsg[:220]
-                     + "  —  If it mentions credits, even a free model's web search needs a small "
-                       "OpenRouter balance; the free tier covers the model, not the web access.")
+        # candidates that errored are recorded as drops with stage "error", not as model drops
+        errs += [d.get("error") or d.get("reason", "") for p in read_payloads()
+                 for d in p.get("dropped", []) if d.get("stage") == "error"]
+        if errs:
+            credit = any("402" in e or "credit" in e.lower() for e in errs)
+            st.error(f"This run did not finish: {len(errs)} call(s) failed. "
+                     + ("The model account ran out of credit. Add credit, or switch the engine in the sidebar "
+                        "to the Claude login, then run again. Organizations that errored are scanned again. "
+                        if credit else "Run again, and organizations that errored are scanned again. ")
+                     + "First error: " + errs[0][:200])
         else:
             st.warning("This run returned no usable approaches, the model dropped every candidate at the "
                        "reading stage. That is usually the model over-dropping, not an error. Pick a steadier "

@@ -779,9 +779,14 @@ async def run_stage1(only: Path | None = None, progress: Progress = None) -> Non
         print("    A high rate is usually the reading gate over-dropping rather than an error. "
               "Every candidate and its reason is listed in review/open_questions.md.")
     errs = [r.get("error", "") for r in results if r.get("error")]
+    # a candidate that errored is not a candidate the model dropped: count both
+    errs += [d.get("error") or d.get("reason", "") for d in all_dropped if d.get("stage") == "error"]
+    if errs and all_rows:
+        print(f"  ! {len(errs)} candidate(s) or organization(s) errored and will be scanned again on the next run. "
+              f"First error: {errs[0][:160]}")
     if not all_rows:
         if errs:
-            print(f"  {len(errs)} of {len(results)} organizations errored. First error: {errs[0][:160]}")
+            print(f"  {len(errs)} error(s) stopped this run. First error: {errs[0][:160]}")
             print("  (a free model's web search still needs OpenRouter credits, a 402 means the balance is empty.)")
         elif all_dropped:
             print("  note: every candidate was dropped at the reading stage. This is usually the model "

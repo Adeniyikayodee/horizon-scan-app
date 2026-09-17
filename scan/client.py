@@ -205,6 +205,7 @@ async def _openrouter_call(
 
 
 _CLI_SEM: asyncio.Semaphore | None = None
+_CLI_LOOP = None
 CLI_LIST_PRICE = {"usd": 0.0}      # what the same calls would cost at list price, for the record
 
 _CLI_NOTE = ("\n\n---\n\nWhere these instructions say to call record, return your final result as the "
@@ -242,9 +243,11 @@ async def _cli_call(frame: str, user: str, schema: dict[str, Any], web: bool, ma
     """One stage through headless Claude Code on the analyst's own login. Each call runs
     in an empty temporary folder with no settings, memory, or MCP servers loaded, so
     nothing from this project's files can leak into a scan's instructions or results."""
-    global _CLI_SEM
-    if _CLI_SEM is None:
-        _CLI_SEM = asyncio.Semaphore(config.CLI_CONCURRENCY)
+    global _CLI_SEM, _CLI_LOOP
+    loop = asyncio.get_running_loop()
+    if _CLI_SEM is None or _CLI_LOOP is not loop:
+        # the app runs each stage on a fresh event loop, and a semaphore cannot cross loops
+        _CLI_SEM, _CLI_LOOP = asyncio.Semaphore(config.CLI_CONCURRENCY), loop
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}   # use the login, not a key
     async with _CLI_SEM:
         with tempfile.TemporaryDirectory(prefix="scan-cli-") as work:
