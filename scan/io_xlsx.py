@@ -153,10 +153,11 @@ def write_orgs_list(orgs: list[dict], path: Path | None = None) -> Path:
     wb = Workbook()
     ws = wb.active
     ws.title = "organizations"
-    ws.append(["id", "name", "type", "region", "why", "source"])
+    web = any(o.get("website") for o in orgs)
+    ws.append(["id", "name", "type", "region", "why", "source"] + (["website"] if web else []))
     for i, o in enumerate(orgs, start=1):
         ws.append([f"O{i:03d}", o.get("name", ""), o.get("type", ""), o.get("region", ""),
-                   o.get("why", ""), o.get("source", "")])
+                   o.get("why", ""), o.get("source", "")] + ([o.get("website", "")] if web else []))
     _stamp(wb)
     wb.save(path)
     return path
@@ -320,13 +321,18 @@ def write_theme_screen(themes: list[dict[str, Any]], unplaced: list[dict[str, An
     path = config.REVIEW_DIR / "theme_screen.md"
     held = [t for t in themes if t.get("screened")]
     near = [t for t in themes if t.get("screen_note") and not t.get("screened")]
-    lines = ["# Existing-portfolio screen\n",
-             f"{len(held)} theme(s) held back to existing work, {len(near)} near the line.\n",
-             "## Held back to existing work, posture deepen\n"]
-    lines += [f"- {t.get('name','')}: {t['screened']}" for t in held] or ["- none"]
-    lines += ["\n## Near the line, left as the model tagged them\n"]
-    lines += [f"- {t.get('name','')} [{t.get('tag','')}, {t.get('posture','')}]: {t['screen_note']}"
-              for t in near] or ["- none"]
+    if config.active_spec().get("portfolio_mode") == "baseline":
+        lines = ["# Theme screen\n",
+                 "The theme list is fixed by the profile. Postures lowered by the evidence gates:\n"]
+        lines += [f"- {t.get('name','')}: {t['posture_note']}" for t in themes if t.get("posture_note")] or ["- none"]
+    else:
+        lines = ["# Existing-portfolio screen\n",
+                 f"{len(held)} theme(s) held back to existing work, {len(near)} near the line.\n",
+                 "## Held back to existing work, posture deepen\n"]
+        lines += [f"- {t.get('name','')}: {t['screened']}" for t in held] or ["- none"]
+        lines += ["\n## Near the line, left as the model tagged them\n"]
+        lines += [f"- {t.get('name','')} [{t.get('tag','')}, {t.get('posture','')}]: {t['screen_note']}"
+                  for t in near] or ["- none"]
     if unplaced:
         lines += ["\n## Outside the fixed theme list, not placed\n",
                   "The model proposed these themes outside the profile's list and they did not "

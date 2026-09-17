@@ -276,6 +276,7 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
             for appr in scored:
                 rec = await _evidence_for(ctx, org, appr, evcfg)
                 appr["evidence_record"] = rec
+                _set_evidence_mark(appr, rec, evcfg)
                 if ladder.entry_allowed(rec["level"], rec["african"], evcfg.get("geography") or {}):
                     passed.append(appr)
                 else:
@@ -386,6 +387,7 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
                 + ["audit." + f for f in au.get("_coerced", [])])
             row["trail"] = _trail(row)
             guardrail.settle_row(row)
+            _hold_unverifiable_source(row)
             if row["verification"]["status"] == "verified":
                 verified += 1
             if row.get("flagged"):
@@ -398,6 +400,32 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
                    "reports_found": len(reports), "reports": reports[:20]}
         _write_org(org, payload)
         return payload
+
+
+_LEVEL_MARK = {5: "strong", 4: "strong", 3: "partial", 2: "weak", 1: "weak"}
+
+
+def _set_evidence_mark(appr: dict[str, Any], rec: dict[str, Any], evcfg: dict[str, Any]) -> None:
+    """The evidence criterion is set in code from the graded level, never left at
+    the Scorer's first reading of the program's own page."""
+    key = evcfg.get("score_key")
+    sc = appr.get("score")
+    if not key or not isinstance(sc, dict) or key not in sc:
+        return
+    sc[key] = _LEVEL_MARK.get(int(rec.get("level", 1)), "weak")
+    sc["reason_" + key] = (f"Set from the evidence level, {rec.get('label', 'E1')}"
+                           + (f": {rec['best'].get('title')}" if (rec.get("best") or {}).get("title") else "") + ".")
+
+
+def _hold_unverifiable_source(row: dict[str, Any]) -> None:
+    """A press article or social post can point to a program but never verifies a
+    claim, so a row resting on one stays partial (profiles that set the rule)."""
+    types = config.active_spec().get("unverifiable_source_types") or []
+    v = row.get("verification") or {}
+    if row.get("source_type") in types and v.get("status") == "verified":
+        v["status"] = "partial"
+        v["note"] = (v.get("note", "") + f" (held to partial: a {row['source_type']} source cannot verify a claim)").strip()
+        row["verification"] = v
 
 
 async def _evidence_for(ctx, org: dict[str, str], appr: dict[str, Any], evcfg: dict[str, Any]) -> dict[str, Any]:
@@ -801,7 +829,9 @@ async def run_stage2() -> None:
         t["member_details"] = md
 
     top2 = _apply_top2(themes)   # the two cleanest areas to enter, or fewer, honestly
-    if len(top2) < 2:
+    if spec.profile_name(config.active_spec()) != spec.HORIZON:
+        print(f"stage 2: {len(top2)} lead theme(s) carry a lead posture after the evidence gates")
+    elif len(top2) < 2:
         print(f"  ! only {len(top2)} theme carries the enter posture, so the memo names "
               f"{len(top2)} area(s) to enter rather than an invented pair")
 

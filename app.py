@@ -553,6 +553,28 @@ with st.sidebar:
     st.markdown('<div style="height:1px;background:var(--line);margin:14px 0"></div>', unsafe_allow_html=True)
     config.PROVIDER = "openrouter"
     config.OR_MODEL = DEFAULT_MODEL
+    SCANS = {"Horizon scan": None, "YES program scan": "yes"}
+    picked = st.selectbox("Scan", list(SCANS), key="scan_pick",
+                          help="Horizon scan: new areas for the Hub to enter. YES program scan: proven "
+                               "program designs for youth employment and skills, graded on their evidence, "
+                               "with a funder scan.")
+    if st.session_state.get("scan_loaded") != picked:
+        st.session_state.scan_loaded = picked
+        name = SCANS[picked]
+        if name:
+            pdir = config.PROFILES_DIR / name
+            prof = json.loads((pdir / "profile.json").read_text(encoding="utf-8"))
+            prof["profile"] = name
+            st.session_state.spec = prof
+            st.session_state.roster = io_xlsx.merge_orgs(
+                [{**o, "source": "profile"} for o in io_xlsx.read_orgs(pdir / "organizations.xlsx")], [])
+        else:
+            st.session_state.spec = json.loads(json.dumps(spec.DEFAULT_SPEC))
+            st.session_state.roster = []
+        st.session_state.step = 1
+        st.session_state.pop("generated", None)
+    config.DRY_RUN = st.checkbox("Test mode, no cost", value=False,
+                                 help="Runs the whole flow on sample data. No model calls and no charge.")
     scope = st.radio(
         "Scope", ["Africa focus", "Global"], horizontal=True,
         help="Africa focus: search each organization's Africa work and judge it for Africa, the "
@@ -589,11 +611,13 @@ with st.expander("Frame the scan  ·  research question, criteria, context", exp
                                  value=sp.get("context", ""), height=140)
     if st.button("Save frame"):
         crit = []
+        known_keys = {c.get("name", ""): c.get("key", "") for c in sp.get("criteria", [])}
         for _, row in edited_crit.iterrows():
             name = str(row.get("name", "") or "").strip()
             if not name:
                 continue
-            key = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or f"c{len(crit)}"
+            # keep a criterion's key while its name is unchanged, since profiles rely on it
+            key = known_keys.get(name) or re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or f"c{len(crit)}"
             try:
                 w = int(row.get("weight", 1))
             except Exception:
@@ -652,15 +676,16 @@ if roster:
     tally = ", ".join(f"{n} {s}" for s, n in counts.items() if s)
     st.caption(f"{len(roster)} organizations in the roster ({tally}). Edit, remove, or add rows, then use it.")
     rdf = pd.DataFrame(roster)
-    for col in ("name", "type", "region", "why", "source"):
+    for col in ("name", "type", "region", "why", "source", "website"):
         if col not in rdf.columns:
             rdf[col] = ""
-    edited_orgs = st.data_editor(rdf[["name", "type", "region", "why", "source"]], num_rows="dynamic",
+    edited_orgs = st.data_editor(rdf[["name", "type", "region", "website", "why", "source"]], num_rows="dynamic",
                                  use_container_width=True, hide_index=True, key="roster_editor")
     cc1, cc2 = st.columns([1, 3])
     if cc1.button("Use this roster", type="primary"):
         rows = [{"name": str(r.get("name", "") or "").strip(), "type": str(r.get("type", "") or ""),
                  "region": str(r.get("region", "") or ""), "why": str(r.get("why", "") or ""),
+                 "website": str(r.get("website", "") or ""),
                  "source": str(r.get("source", "") or "").strip() or "analyst"}
                 for _, r in edited_orgs.iterrows() if str(r.get("name", "") or "").strip()]
         rows = io_xlsx.merge_orgs(rows, [])          # final de-dup and contiguous ids
@@ -829,7 +854,8 @@ if step >= 3:
 if step >= 4:
     eyebrow("Step four", "Generate the report")
     sc = config.OUT_DIR / "theme_scorecard.xlsx"
-    out_ready = sc.exists()
+    deliv = config.active_spec().get("deliverables")
+    out_ready = sc.exists() or bool(deliv and (config.OUT_DIR / f"{deliv.get('brief', 'brief')}.docx").exists())
     if st.button("Regenerate the report" if out_ready else "Generate", type="primary"):
         with st.status("Clustering into themes and writing the memo..."):
             run_async(pipeline.run_stage2())
@@ -845,6 +871,17 @@ if step >= 4:
         docs = [("Theme scorecard", "the decision layer", config.OUT_DIR / "theme_scorecard.xlsx"),
                 ("Innovation map", "the evidence, by theme", config.OUT_DIR / "innovation_map.xlsx"),
                 ("Synthesis memo", "Word document, house style", config.OUT_DIR / "synthesis_memo.docx")]
+        if deliv:
+            opts = config.OUT_DIR / f"{deliv.get('options', 'options')}.xlsx"
+            if opts.exists():
+                st.dataframe(pd.read_excel(opts, sheet_name="Options"), use_container_width=True, hide_index=True)
+            docs = [("YES scan brief", "Word document, plain language, house style",
+                     config.OUT_DIR / f"{deliv.get('brief', 'brief')}.docx"),
+                    ("Program design options", "options list and funder map", opts)]
+            notes = config.REVIEW_DIR / "policy_violations.md"
+            if notes.exists():
+                with st.expander("Notes to fix by hand before this goes out"):
+                    st.markdown(notes.read_text(encoding="utf-8"))
         for label, sub, path in docs:
             if path.exists():
                 dc1, dc2 = st.columns([3, 1])

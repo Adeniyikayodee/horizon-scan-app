@@ -346,6 +346,8 @@ Search the web, then call record once. If you find none, record an empty list.
 
 async def librarian(ctx: dict[str, str], org: dict[str, str], hint: str = "") -> list[dict[str, Any]]:
     user = f"Organization: {org['name']}\nType: {org.get('type','')}\nRegion: {org.get('region','')}"
+    if org.get("website"):
+        user += f"\nWebsite: {org['website']}"
     if hint:
         user += "\n\n" + hint
     out = await structured_call(
@@ -357,6 +359,8 @@ async def librarian(ctx: dict[str, str], org: dict[str, str], hint: str = "") ->
 
 async def scout(ctx: dict[str, str], org: dict[str, str], hint: str = "") -> dict[str, Any]:
     user = f"Organization: {org['name']}\nType: {org.get('type','')}\nRegion: {org.get('region','')}"
+    if org.get("website"):
+        user += f"\nWebsite: {org['website']}"
     if hint:
         user += "\n\n" + hint
     out = await structured_call(

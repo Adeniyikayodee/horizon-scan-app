@@ -125,6 +125,21 @@ def _themes(user: str) -> dict[str, Any]:
             d[c["key"]] = mark
         return d
 
+    sp = config.active_spec()
+    if sp.get("themes_seed"):
+        seed = sp["themes_seed"]
+        ps = spec_mod.postures(sp)
+        out = []
+        for i, s in enumerate(seed[:4]):
+            mem = members[i * 3:(i + 1) * 3]
+            if mem:
+                # the first theme asks for the top posture on purpose, so the gates are exercised
+                out.append(theme(s["name"].lower(), "new", ps[0] if i == 0 else ps[min(i, len(ps) - 1)],
+                                 "strong", mem, i == 0))
+        if len(members) > 12:
+            out.append(theme("An invented theme outside the list", "new", ps[0], "partial", members[12:13], False))
+        return {"themes": out}
+
     # Two of these are deliberately NON-compliant, so the dry run exercises the gates
     # rather than a set already in the right shape. The third is tagged existing but
     # asks to enter, which spec.coerce_theme must correct. The fourth is tagged new but
@@ -159,9 +174,19 @@ def _synth() -> dict[str, Any]:
     # spread the floor across the sections, with a little headroom so the mock always
     # clears its own gate even as the spec's section list changes
     per = max(1, int(floor * 1.15 / max(1, len(sections)) / len(_FILLER.split())) + 1)
-    parts = ["# Global scan, a wrap-up on the new areas to enter", "", _FILLER.strip(), ""]
+    if sp.get("brief_checks"):
+        ceiling = int(m.get("max_words") or floor * 1.2)
+        per = max(1, int((floor + ceiling) / 2 / max(1, len(sections)) / len(filler.split())))
+    filler = _FILLER
+    title = "# Global scan, a wrap-up on the new areas to enter"
+    if sp.get("brief_checks"):
+        filler = ("The scan found program designs that help young people find work. Some have strong proof. "
+                  "Others need more study. The team can use them to plan the next proposal. ")
+        title = "# Program designs that help young people find work"
+        per_words = len(filler.split())
+    parts = [title, "", filler.strip(), ""]
     for s in sections:
-        parts += [f"## {s['heading']}", "", (_FILLER * per).strip(), ""]
+        parts += [f"## {s['heading']}", "", ((filler if sp.get("brief_checks") else _FILLER) * per).strip(), ""]
     memo = "\n".join(parts)
     return {"memo_markdown": memo,
             "scorecard_intro": "Themes scored on the criteria, with two clean new areas to enter first."}
