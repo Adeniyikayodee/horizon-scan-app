@@ -196,11 +196,26 @@ def _read_evidence(subj: str, h: int) -> dict[str, Any]:
             "cost_per_outcome": "not found", "cost_quote": "", "model_level": "E4" if rct else "E2"}
 
 
+def _funder(subj: str) -> dict[str, Any]:
+    name = subj.replace("Funder:", "").strip()
+    print(f"  funder   {name[:48]}")
+    url = "https://example.org/strategy"
+
+    def f(value, quote="The strategy says so."):
+        return {"value": value, "quote": quote, "url": url}
+    return {"strategy": {**f("Youth employment strategy"), "period": "2024-2030"},
+            "themes": f(["TVET at secondary level"]), "countries": f(["Ghana", "Kenya"]),
+            "instruments": f(["grants"]), "size": f("not found"), "eligibility": f("unclear"),
+            "calls": []}
+
+
 def mock_response(schema: dict[str, Any], user: str) -> dict[str, Any]:
     keys = set(schema.get("properties", {}).keys())
     subj = _subject(user)
     h = sum(ord(c) for c in user)
 
+    if "eligibility" in keys and "calls" in keys:
+        return _funder(subj)
     if "evaluations" in keys:
         return _find_evidence(subj, h)
     if "method_quote" in keys:

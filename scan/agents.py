@@ -806,3 +806,71 @@ async def read_evidence(ctx: dict[str, str], appr: dict[str, Any], ev: dict[str,
         "cost_quote": _s(out.get("cost_quote")),
         "model_level": _enum(out.get("model_level"), {"e1", "e2", "e3", "e4", "e5"}, "e1").upper(),
     }
+
+
+# --- the Funder agent ------------------------------------------------------------
+FUNDER_I = """
+You are the Funder analyst. You are given ONE funder. Read its own strategy, program,
+and funding pages, and record what they say. For every field give the value, the one
+sentence that says it copied word for word, and the link of the page that sentence is
+on. The sentence is checked against that page, so never paraphrase it.
+
+Record:
+- strategy: its strategy for youth, jobs, skills, or education, and the strategy period.
+- themes: which of these program themes it funds: {themes}.
+- countries: the countries or regions it prioritizes.
+- instruments: how it funds (grants, loans, results-based finance, open calls, equity,
+  technical assistance, other).
+- size: a typical grant or loan size, where stated.
+- calls: current or upcoming calls for proposals, each with its title, deadline, and link.
+- eligibility: whether an African policy think tank can be a partner or grantee, yes,
+  no, or unclear.
+
+Write "not found", or an empty list, where the pages do not say. Never record the
+name, email, or phone number of any individual. Use ONLY links that appear in your
+search results, copied exactly. Search the web, then call record once.
+"""
+
+
+def funder_schema(theme_names: list[str]) -> dict[str, Any]:
+    def field(value: dict[str, Any], extra: dict[str, Any] | None = None) -> dict[str, Any]:
+        props = {"value": value, "quote": {"type": "string"}, "url": {"type": "string"}, **(extra or {})}
+        return {"type": "object", "additionalProperties": False, "required": list(props), "properties": props}
+    return {
+        "type": "object", "additionalProperties": False,
+        "required": ["strategy", "themes", "countries", "instruments", "size", "calls", "eligibility"],
+        "properties": {
+            "strategy": field({"type": "string"}, {"period": {"type": "string"}}),
+            "themes": field({"type": "array", "items": {"type": "string", "enum": theme_names or ["other"]}}),
+            "countries": field({"type": "array", "items": {"type": "string"}}),
+            "instruments": field({"type": "array", "items": {"type": "string", "enum": [
+                "grants", "loans", "results-based finance", "open calls", "equity", "technical assistance",
+                "other"]}}),
+            "size": field({"type": "string"}),
+            "calls": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+                                                 "required": ["title", "deadline", "url"],
+                                                 "properties": {"title": {"type": "string"},
+                                                                "deadline": {"type": "string"},
+                                                                "url": {"type": "string"}}}},
+            "eligibility": field({"type": "string", "enum": ["yes", "no", "unclear"]}),
+        },
+    }
+
+
+async def funder(ctx: dict[str, str], f: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
+    names = cfg.get("theme_names") or []
+    instr = _i("funder", FUNDER_I).replace("{themes}", "; ".join(names))
+    out = await structured_call(
+        model=config.MODEL_SONNET, frame=_frame(ctx, ["mission"], instr),
+        user=f"Funder: {f['name']}\nType: {f.get('type','')}", schema=funder_schema(names),
+        web=True, effort="medium", max_tokens=6000,
+    )
+    rec: dict[str, Any] = {}
+    for k in ("strategy", "themes", "countries", "instruments", "size", "eligibility"):
+        item = out.get(k) if isinstance(out.get(k), dict) else {}
+        rec[k] = {"value": item.get("value", [] if k in ("themes", "countries", "instruments") else "not found"),
+                  "quote": _s(item.get("quote")), "url": _s(item.get("url"))}
+        if k == "strategy":
+            rec[k]["period"] = _s(item.get("period"))
+    rec["calls"] = [c for c in _list(out.get("calls")) if isinstance(c, dict)]
+    return rec

@@ -635,3 +635,12 @@ def reader_schema(sp: dict, base: dict) -> dict:
 
 def evidence_config(sp: dict) -> dict | None:
     return sp.get("evidence") or None
+
+
+def funder_config(sp: dict) -> dict | None:
+    """The funder scan's settings, with the theme names taken from the theme list so
+    the two cannot disagree."""
+    cfg = sp.get("funders")
+    if not cfg:
+        return None
+    return {**cfg, "theme_names": [t["name"] for t in sp.get("themes_seed") or []]}

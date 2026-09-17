@@ -21,7 +21,7 @@ from typing import Any, Callable
 
 Progress = Callable[[dict], None] | None
 
-from . import agents, client, config, docx_out, guardrail, io_xlsx, ladder, sources, spec
+from . import agents, client, config, docx_out, funders, guardrail, io_xlsx, ladder, sources, spec
 
 
 def _today() -> str:
@@ -509,6 +509,37 @@ def _apply_top2(themes: list[dict[str, Any]]) -> list[str]:
     return [t["name"] for t in eligible[:n]]
 
 
+async def run_funders(ctx, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The full funder scan. Each funder is read once and cached under work/funders/,
+    so a re-run only reads funders not yet done. Returns the funders ranked by fit."""
+    cfg = spec.funder_config(config.active_spec())
+    roster = io_xlsx.read_orgs() if config.ORG_SHEET.exists() else []
+    todo = funders.build_list(roster, rows, cfg)
+    print(f"stage 2: funder scan, {len(todo)} funders")
+    sem = asyncio.Semaphore(config.MAX_CONCURRENCY)
+
+    async def one(f: dict[str, Any]) -> dict[str, Any]:
+        cached = funders.read_cached(f["name"])
+        if cached is not None:
+            return cached
+        async with sem:
+            try:
+                raw = await agents.funder(ctx, f, cfg)
+                rec = await funders.ground({**f, **raw})
+            except Exception as e:
+                return {**f, "error": str(e)[:160]}
+        funders.write_cached(f["name"], rec)
+        return rec
+
+    records = await asyncio.gather(*[one(f) for f in todo])
+    failed = [r for r in records if r.get("error")]
+    if failed:
+        print(f"  ! {len(failed)} funder(s) could not be read, first: {failed[0]['name']}")
+    ranked = funders.rank([r for r in records if not r.get("error")], cfg)
+    (config.WORK_DIR / "funders.json").write_text(json.dumps(ranked + failed, ensure_ascii=False), encoding="utf-8")
+    return ranked + failed
+
+
 def apply_posture_gates(rows: list[dict[str, Any]], themes: list[dict[str, Any]], gates: dict[str, Any]) -> None:
     """Postures follow the evidence, in code. Each option takes the best posture its
     evidence level allows. Each theme keeps the model's proposed posture only when
@@ -725,6 +756,7 @@ async def run_stage2() -> None:
     if evcfg:
         io_xlsx.write_evidence_overrides(kept)
         apply_posture_gates(kept, themes, evcfg.get("gates") or {})
+    funder_map = await run_funders(ctx, kept) if spec.funder_config(config.active_spec()) else None
 
     # carry the scan's verification through into the report: per-theme evidence
     row_by_name = {r["name"]: r for r in kept}
