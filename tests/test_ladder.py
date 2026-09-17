@@ -352,3 +352,43 @@ def test_below_the_bar_stays_in_the_longlist_unticked(tmp_path, monkeypatch):
     row = [c.value for c in ws[2]]
     assert row[header.index("keep")] == "N"
     assert "below the evidence bar" in row[header.index("evidence flags")]
+
+
+def test_evaluation_on_the_implementers_own_site_is_self_published():
+    g = ladder.grade(_ev(url="https://www.experienceeducate.org/blog/new-rct"), implementer="Educate!",
+                     method_grounded=True, implementer_site="https://www.experienceeducate.org/")
+    assert g["level"] == 3 and "published by the implementer" in g["caps"][0]
+    peer = ladder.grade(_ev(url="https://www.harambee.co.za/wp-content/uploads/aer.pdf", peer_reviewed=True),
+                        implementer="Harambee", method_grounded=True, implementer_site="https://www.harambee.co.za/")
+    assert peer["level"] == 4, "a peer-reviewed paper hosted by the implementer still counts"
+
+
+def test_e5_needs_trials_in_different_places():
+    a = {**_ev(countries=["Uganda"]), "level": 4}
+    b = {**_ev(countries=["Uganda", "Kenya"]), "level": 4}
+    assert ladder.combine([a, b])["level"] == 4
+    c = {**_ev(countries=["Rwanda"]), "level": 4}
+    assert ladder.combine([a, c])["level"] == 5
+
+
+def test_search_recall_matching(monkeypatch, tmp_path):
+    import json as _json
+    from scan import agents as _agents, evaluate
+    golden = {"targets": {"search_recall_min": 0.5}, "evaluations": [
+        {"id": "a", "program": "P", "implementer": "I", "expected_level": 4,
+         "title": "Job Search and Hiring with Limited Information about Workseekers' Skills", "url": "https://x.org/aer.pdf"},
+        {"id": "b", "program": "Q", "implementer": "J", "expected_level": 4,
+         "title": "Generating Skilled Self-Employment in Developing Countries", "url": "https://y.org/qje.pdf"},
+        {"id": "c", "program": "R", "implementer": "K", "expected_level": 1, "title": "t", "url": "https://z.org"}]}
+    path = tmp_path / "g.json"
+    path.write_text(_json.dumps(golden))
+
+    async def find(ctx, org, appr, sf, hint=""):
+        if appr["name"] == "P":
+            return [{"title": "Job search and hiring with limited information about workseekers skills (AER)",
+                     "url": "https://aeaweb.org/x"}]
+        return [{"title": "Unrelated brief", "url": "https://w.org"}]
+    monkeypatch.setattr(_agents, "find_evidence", find)
+    res = asyncio.run(evaluate.search_recall(path))
+    assert [(r["id"], r["found"]) for r in res["rows"]] == [("a", True), ("b", False)]
+    assert res["passed"] and "1 of 2" in evaluate.recall_report(res)

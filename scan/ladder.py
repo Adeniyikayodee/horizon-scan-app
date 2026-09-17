@@ -98,8 +98,13 @@ def _same_body(a: str, b: str) -> bool:
     return bool(na and nb) and (na == nb or na in nb or nb in na)
 
 
+def _host(url: str) -> str:
+    m = re.match(r"https?://([^/]+)", (url or "").lower())
+    return re.sub(r"^www\.", "", m.group(1)) if m else ""
+
+
 def grade(ev: dict[str, Any], implementer: str, method_grounded: bool | None,
-          outcome_grounded: bool | None = None) -> dict[str, Any]:
+          outcome_grounded: bool | None = None, implementer_site: str = "") -> dict[str, Any]:
     """Set one evaluation's level, in code. Returns the evaluation with `level`,
     `code_level`, `model_level`, `caps`, and `flags` filled in.
 
@@ -127,10 +132,12 @@ def grade(ev: dict[str, Any], implementer: str, method_grounded: bool | None,
     level = min(level, code_level)
 
     evaluator = str(ev.get("evaluator", ""))
-    independent = ((bool(ev.get("independent")) and not _same_body(evaluator, implementer))
+    own_site = bool(implementer_site) and _host(ev.get("url", "")) == _host(implementer_site)
+    independent = ((bool(ev.get("independent")) and not _same_body(evaluator, implementer) and not own_site)
                    or bool(ev.get("peer_reviewed")))
     if level >= 4 and not independent:
-        caps.append("evaluator not independent of the implementer, capped at E3")
+        caps.append("published by the implementer and not peer reviewed, capped at E3" if own_site
+                    else "evaluator not independent of the implementer, capped at E3")
         level = 3
     if str(ev.get("outcome_type", "")).lower() == "outputs_only":
         if level > 2:
@@ -159,7 +166,9 @@ def combine(evaluations: list[dict[str, Any]]) -> dict[str, Any]:
     best = max([e.get("level", 1) for e in counted] or [1])
     rct_countries = [frozenset(c.strip().lower() for c in (e.get("countries") or []))
                      for e in counted if e.get("level", 1) >= 4]
-    if best == 4 and len({c for c in rct_countries if c}) >= 2:
+    rct_countries = [c for c in rct_countries if c]
+    disjoint = any(a.isdisjoint(b) for i, a in enumerate(rct_countries) for b in rct_countries[i + 1:])
+    if best == 4 and disjoint:
         best = 5
     africa_e3 = [e for e in counted if e.get("level", 1) >= 3 and is_african(e.get("countries") or [])]
     return {"level": best, "label": label(best), "replicated_in_africa": len(africa_e3) >= 2,

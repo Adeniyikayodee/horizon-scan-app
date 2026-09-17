@@ -31,6 +31,8 @@ def main() -> None:
     ev.add_argument("--model", default=None, help="openrouter model id")
     ev.add_argument("--judge", type=Path, default=None, help="path to a memo .md to score on the rubric")
     ev.add_argument("--profile", default=None, help="scan profile (default horizon)")
+    ev.add_argument("--search", action="store_true",
+                    help="with a profile: test whether the evidence search finds the golden evaluations")
 
     run = sub.add_parser("run", help="run a stage")
     run.add_argument("--stage", type=int, choices=[1, 2], required=True)
@@ -75,9 +77,12 @@ def main() -> None:
         from . import evaluate
         golden = config.PROFILES_DIR / (args.profile or "") / "golden.json"
         if args.profile and config.active_spec().get("evidence") and golden.exists():
-            res = asyncio.run(evaluate.evidence_eval(golden))
-            report = evaluate.evidence_report(res)
-            out = config.REVIEW_DIR / "evidence_accuracy.md"
+            if args.search:
+                res = asyncio.run(evaluate.search_recall(golden))
+                report, out = evaluate.recall_report(res), config.REVIEW_DIR / "search_recall.md"
+            else:
+                res = asyncio.run(evaluate.evidence_eval(golden))
+                report, out = evaluate.evidence_report(res), config.REVIEW_DIR / "evidence_accuracy.md"
             out.write_text(report, encoding="utf-8")
             print(report)
             print(f"written to {out}")

@@ -95,3 +95,17 @@ def test_run_funders_dry_run_caches_and_ranks(tmp_path, monkeypatch):
     assert out[0]["fit"]["score"] == 0, "dry-run quotes cannot be grounded, so nothing scores"
     assert funders.read_cached("Mastercard Foundation") is not None
     assert (tmp_path / "funders.json").exists()
+
+
+def test_not_found_is_never_a_funder():
+    rows = [{"evidence_record": {"posture_allowed": "adopt", "funders": ["not found"]}, "funders": "Not found."}]
+    assert funders.build_list([], rows, CFG) == []
+
+
+@pytest.mark.parametrize("deadline,passed", [
+    ("April 23, 2026", True), ("Spring 2026", True), ("December 1, 2026", False), ("October 2026", False),
+    ("2025", True), ("rolling", False), ("", False),
+])
+def test_expired_calls_are_not_open(deadline, passed):
+    from datetime import datetime
+    assert funders.deadline_passed(deadline, today=datetime(2026, 9, 17)) is passed

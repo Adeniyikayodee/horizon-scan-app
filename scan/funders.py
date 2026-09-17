@@ -68,6 +68,7 @@ def build_list(roster: list[dict[str, str]], rows: list[dict[str, Any]], cfg: di
             continue
         names = list(rec.get("funders") or [])
         names += [n.strip() for n in re.split(r"[;,]", str(r.get("funders", ""))) if n.strip()]
+        names = [n for n in names if n.strip().lower().rstrip(".") not in ("not found", "none", "n/a", "unknown", "")]
         for n in dict.fromkeys(names):
             counts[n] = counts.get(n, 0) + 1
     added = 0
@@ -99,10 +100,42 @@ async def ground(record: dict[str, Any]) -> dict[str, Any]:
         rec[f] = item
     calls = []
     for c in rec.get("calls") or []:
-        if c.get("url") and not (not config.DRY_RUN and await asyncio.to_thread(sources.link_dead, c["url"])):
-            calls.append(c)
+        if not c.get("url") or deadline_passed(c.get("deadline", "")):
+            continue
+        if not config.DRY_RUN and await asyncio.to_thread(sources.link_dead, c["url"]):
+            continue
+        calls.append(c)
     rec["calls"] = calls
     return rec
+
+
+_MONTHS = {m: i for i, m in enumerate(["january", "february", "march", "april", "may", "june", "july", "august",
+                                        "september", "october", "november", "december"], start=1)}
+_SEASON_END = {"spring": 5, "summer": 8, "fall": 11, "autumn": 11, "winter": 12}
+
+
+def deadline_passed(deadline: str, today: datetime | None = None) -> bool:
+    """True when a stated deadline is clearly before today: a full date, a month and
+    year, a season and year, or a year alone. A deadline with no year cannot be dated,
+    so it is kept and left for the reviewer."""
+    today = today or datetime.now()
+    s = (deadline or "").lower()
+    years = [int(y) for y in _YEAR.findall(s)]
+    if not years:
+        return False
+    year = max(years)
+    month = next((n for m, n in _MONTHS.items() if m in s), None)
+    season = next((n for k, n in _SEASON_END.items() if k in s), None)
+    day_m = re.search(r"\b([0-3]?\d)\b(?!\d)", re.sub(r"(19|20)\d{2}", "", s))
+    if month and day_m:
+        try:
+            return datetime(year, month, int(day_m.group(1))) < today.replace(hour=0, minute=0, second=0, microsecond=0)
+        except ValueError:
+            pass
+    end_month = month or season
+    if end_month:
+        return (year, end_month) < (today.year, today.month)
+    return year < today.year
 
 
 def _norm_place(s: str) -> str:

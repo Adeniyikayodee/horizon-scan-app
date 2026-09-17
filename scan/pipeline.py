@@ -492,7 +492,8 @@ async def _evidence_for(ctx, org: dict[str, str], appr: dict[str, Any], evcfg: d
         # quote_exact never fetches a placeholder link, so this is safe in a dry run too
         mg = await asyncio.to_thread(sources.quote_exact, url, r["method_quote"])
         og = await asyncio.to_thread(sources.quote_exact, url, r["outcome_quote"])
-        g = ladder.grade({**ev, **r}, implementer=org["name"], method_grounded=mg, outcome_grounded=og)
+        g = ladder.grade({**ev, **r}, implementer=org["name"], method_grounded=mg, outcome_grounded=og,
+                         implementer_site=org.get("website", ""))
         g["method_grounded"], g["outcome_grounded"] = mg, og
         if g["level"] >= 3:
             try:

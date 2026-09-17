@@ -3,7 +3,8 @@
   "targets": {
     "exact_match_min": 0.9,
     "false_e4_plus_max": 0,
-    "e3_plus_ungrounded_max": 0
+    "e3_plus_ungrounded_max": 0,
+    "search_recall_min": 0.8
   },
   "evaluations": [
     {
