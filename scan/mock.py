@@ -174,16 +174,14 @@ def _synth() -> dict[str, Any]:
     # spread the floor across the sections, with a little headroom so the mock always
     # clears its own gate even as the spec's section list changes
     per = max(1, int(floor * 1.15 / max(1, len(sections)) / len(_FILLER.split())) + 1)
-    if sp.get("brief_checks"):
-        ceiling = int(m.get("max_words") or floor * 1.2)
-        per = max(1, int((floor + ceiling) / 2 / max(1, len(sections)) / len(filler.split())))
     filler = _FILLER
     title = "# Global scan, a wrap-up on the new areas to enter"
     if sp.get("brief_checks"):
         filler = ("The scan found program designs that help young people find work. Some have strong proof. "
                   "Others need more study. The team can use them to plan the next proposal. ")
         title = "# Program designs that help young people find work"
-        per_words = len(filler.split())
+        ceiling = int(m.get("max_words") or floor * 1.2)
+        per = max(1, int((floor + ceiling) / 2 / max(1, len(sections)) / len(filler.split())))
     parts = [title, "", filler.strip(), ""]
     for s in sections:
         parts += [f"## {s['heading']}", "", ((filler if sp.get("brief_checks") else _FILLER) * per).strip(), ""]
