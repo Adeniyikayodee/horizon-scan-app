@@ -707,10 +707,14 @@ async def _synthesize_draft(ctx: dict[str, str], themes_list: list[dict[str, Any
         short = spec.memo_shortfall(out.get("memo_markdown", ""), sp)
         if not short:
             return out
+        if "ceiling" in short and "floor" not in short:
+            # too long is not fixed by more room to write: the editor cuts it instead
+            print(f"  synth: memo came in long ({short}), leaving it to the rewrite pass to cut")
+            return out
         print(f"  synth: memo came in short ({short}), retrying with more headroom")
     if best:
         left = spec.memo_shortfall(best.get("memo_markdown", ""), sp)
-        print(f"  ! synth: delivering the fullest draft, still short: {left}" if left
+        print(f"  ! synth: delivering the fullest draft, still off target: {left}" if left
               else "  synth: delivering the fullest draft")
         return best
     raise RuntimeError("synthesizer produced no memo after two attempts")

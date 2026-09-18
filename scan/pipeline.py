@@ -915,9 +915,7 @@ async def run_stage2() -> None:
             print(f"stage 2: only {len(kept)} option(s) passed review, so the brief targets about 1,600 words")
         sp_now["brief_checks"] = {**sp_now["brief_checks"],
                                   "theme_names": [t["name"] for t in sp_now.get("themes_seed") or []],
-                                  "allowed_acronyms": sorted({w for f in (funder_map or []) + [{"name": r.get("org", "")} for r in kept]
-                                                              for w in str(f.get("name", "")).split()
-                                                              if w.isupper() and len(w) >= 2})}
+                                  "allowed_acronyms": _known_acronyms(kept, funder_map or [])}
     if funder_map:
         top = [{"funder": f.get("name", ""), "fit": (f.get("fit") or {}).get("score"),
                 "themes": (f.get("fit") or {}).get("themes_matched"),
@@ -953,6 +951,20 @@ async def run_stage2() -> None:
     print(f"stage 2 done: {len(themes)} themes -> out/. "
           + (f"Cleanest new areas: {', '.join(top2)}" if top2
              else "No theme carries the enter posture, nothing is recommended for entry."))
+
+
+def _known_acronyms(rows: list[dict[str, Any]], funder_map: list[dict[str, Any]]) -> list[str]:
+    """Acronyms that are organizations' own names in this run's data, so the brief may
+    use them as names. Taken from the funders, the organizations, the options, and the
+    funders named on each row."""
+    names: list[str] = [str(f.get("name", "")) for f in funder_map]
+    for r in rows:
+        names += [str(r.get("org", "")), str(r.get("name", "")), str(r.get("funders", ""))]
+        rec = r.get("evidence_record") or {}
+        names += [str(x) for x in rec.get("funders") or []]
+        names += [str((rec.get("best") or {}).get("title", ""))]
+    words = {w.strip("(),.;:") for n in names for w in n.split()}
+    return sorted({w for w in words if w.isupper() and len(re.sub(r"[^A-Z0-9&-]", "", w)) >= 2})
 
 
 async def _write_profile_deliverables(deliv: dict[str, str], synth: dict[str, Any], kept, themes,

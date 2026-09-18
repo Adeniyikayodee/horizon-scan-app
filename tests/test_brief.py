@@ -205,3 +205,34 @@ def test_every_theme_must_be_named():
 def test_an_organizations_own_acronym_name_is_allowed():
     assert plain.acronym_hits("GIF funds innovation.", {"GIF"}) == []
     assert plain.acronym_hits("GIF funds innovation.") == ["acronym not spelled out at first use: GIF"]
+
+
+def test_acronym_check_reads_names_as_names():
+    text = ("The Abdul Latif Jameel Poverty Action Lab (J-PAL) funds work. Skills Development for Youth "
+            "Employment II (SKYE II) runs in Nigeria, paid for by the UBS Optimus Foundation.")
+    assert plain.acronym_hits(text, {"UBS"}) == []
+    assert plain.acronym_hits("NYESAF pays for results.") == ["acronym not spelled out at first use: NYESAF"]
+
+
+def test_known_acronyms_come_from_the_run(tmp_path):
+    from scan import pipeline
+    rows = [{"org": "GIZ", "name": "SKYE II", "funders": "UBS Optimus Foundation; Mastercard Foundation",
+             "evidence_record": {"funders": ["CIFF"], "best": {"title": "RISE Working Paper"}}}]
+    out = pipeline._known_acronyms(rows, [{"name": "GPE Knowledge and Innovation Exchange (KIX)"}])
+    assert {"GIZ", "UBS", "CIFF", "RISE", "GPE"} <= set(out)
+
+
+def test_a_long_memo_is_not_retried_with_more_room(monkeypatch):
+    import asyncio
+    from scan import agents, config, spec
+    monkeypatch.setattr(config, "SPEC", {**spec.DEFAULT_SPEC,
+                                         "memo": {"min_words": 5, "max_words": 10, "sections": []}})
+    calls = []
+
+    async def fake(**kw):
+        calls.append(kw["max_tokens"])
+        return {"memo_markdown": "word " * 40, "scorecard_intro": "i"}
+    monkeypatch.setattr(agents, "structured_call", fake)
+    out = asyncio.run(agents._synthesize_draft({}, []))
+    assert len(calls) == 1, "an over-long memo must not be retried with more headroom"
+    assert out["memo_markdown"].startswith("word")

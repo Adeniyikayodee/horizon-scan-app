@@ -28,6 +28,21 @@ METHODS = ["systematic_review", "meta_analysis", "rct", "quasi_experimental",
 _METHOD_LEVEL = {"systematic_review": 5, "meta_analysis": 5, "rct": 4, "quasi_experimental": 3,
                  "before_after": 2, "descriptive": 1, "none": 1}
 
+# An evaluation that reports no result yet, because the study is still running or the
+# document only refers to results held elsewhere, is not evidence that a design works.
+_NO_RESULT = re.compile(r"\bnot stated\b|\bnot (yet )?(reported|available|published|released)\b|"
+                        r"\bno (results?|effect sizes?|findings?) (are |were |is )?(yet )?(reported|stated|given|available)\b|"
+                        r"\b(results?|findings?) (are|is) (pending|forthcoming|expected)\b|"
+                        r"\b(study|trial|evaluation) is (still )?(ongoing|underway|in progress)\b|"
+                        r"\bdue to (end|conclude|report)\b|\bresults are not\b", re.I)
+
+
+def reports_a_result(effect: str) -> bool:
+    """Does the evaluation actually report an outcome? An empty or 'not stated' summary,
+    or one that says the study is still running, does not."""
+    e = (effect or "").strip()
+    return bool(e) and not _NO_RESULT.search(e)
+
 # Method words, English and French, strongest first. Matched on the grounded quote
 # only, lowercased, with accents kept (the French patterns carry them).
 _TERMS: list[tuple[int, str]] = [
@@ -116,7 +131,7 @@ def grade(ev: dict[str, Any], implementer: str, method_grounded: bool | None,
          a trial with the implementer or a research partner count as independent, and
          so does a peer-reviewed publication. Not independent means the implementer
          grading itself, or a document published on its own site and not peer reviewed.
-      4. an evaluation that measures only outputs is capped at E2
+      4. an evaluation that measures only outputs, or reports no result yet, is capped at E2
       5. an evaluation of a different program counts for nothing, E1
     and the model's own level is a ceiling too. An outcome sentence that is not found
     word for word is flagged for the reviewer, not capped: the caps rest on the design,
@@ -142,6 +157,9 @@ def grade(ev: dict[str, Any], implementer: str, method_grounded: bool | None,
         caps.append("published by the implementer and not peer reviewed, capped at E3" if own_site
                     else "evaluator not independent of the implementer, capped at E3")
         level = 3
+    if level > 2 and not reports_a_result(str(ev.get("effect_summary", ""))):
+        caps.append("the evaluation reports no result yet, capped at E2")
+        level = 2
     if str(ev.get("outcome_type", "")).lower() == "outputs_only":
         if level > 2:
             caps.append("measures outputs, not outcomes, capped at E2")

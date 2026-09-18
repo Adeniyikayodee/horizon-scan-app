@@ -29,7 +29,10 @@ ANTITHESIS = [
 ]
 
 _DASHES = "—–―‒−"
-_ACRONYM = re.compile(r"\b[A-Z][A-Z0-9&]{1,}[a-z]?\b")
+# A hyphenated acronym is one token (J-PAL, not PAL), and a trailing roman numeral
+# belongs to the program's name (SKYE II).
+_ACRONYM = re.compile(r"\b[A-Z][A-Z0-9&]*(?:-[A-Z0-9&]+)*[a-z]?\b")
+_ROMAN = re.compile(r"^(?:I{1,3}|IV|VI{0,3}|IX|XI{0,2})$")
 _KNOWN = {"E1", "E2", "E3", "E4", "E5", "US", "OK"}
 
 
@@ -151,7 +154,8 @@ def acronym_hits(text: str, allowed: set[str] | None = None) -> list[str]:
     hits, seen = [], set()
     for m in _ACRONYM.finditer(text):
         a = m.group(0)
-        if a in seen or a in _KNOWN or a in (allowed or set()) or a.isdigit():
+        if (a in seen or a in _KNOWN or a in (allowed or set()) or a.isdigit()
+                or _ROMAN.match(a) or len(re.sub(r"[^A-Z0-9&]", "", a)) < 2):
             continue
         seen.add(a)
         before = text[max(0, m.start() - 1):m.start()]

@@ -14,6 +14,7 @@ GATES = {"adopt": {"min": 4, "or_replicated_africa_min": 3}, "adapt": {"min": 3}
 def _ev(**kw):
     base = {"method": "rct", "model_level": "E4", "independent": True, "evaluator": "J-PAL",
             "outcome_type": "outcomes", "program_matches": True, "countries": ["Kenya"],
+            "effect_summary": "Employment rose by 12 percent two years after the program.",
             "method_quote": "Applicants were randomly assigned to treatment and control groups."}
     return {**base, **kw}
 
@@ -265,11 +266,13 @@ def test_golden_eval_scoring(monkeypatch, tmp_path):
     monkeypatch.setattr(sources, "quote_exact", lambda url, q: True)
     readings = {
         "https://x.org/a": {"method": "rct", "model_level": "E4", "method_quote": "Participants were randomly assigned.",
-                            "independent": True, "outcome_type": "outcomes", "program_matches": True},
+                            "independent": True, "outcome_type": "outcomes", "program_matches": True,
+                            "effect_summary": "Earnings rose by 9 percent."},
         # the trap: data checks were randomized, the design is before and after
         "https://x.org/b": {"method": "before_after", "model_level": "E4",
                             "method_quote": "We ran randomized response verifications.",
-                            "independent": False, "outcome_type": "outcomes", "program_matches": True},
+                            "independent": False, "outcome_type": "outcomes", "program_matches": True,
+                            "effect_summary": "Employment rose after training."},
     }
 
     async def fake_read(ctx, appr, ev, doc):
@@ -392,3 +395,20 @@ def test_search_recall_matching(monkeypatch, tmp_path):
     res = asyncio.run(evaluate.search_recall(path))
     assert [(r["id"], r["found"]) for r in res["rows"]] == [("a", True), ("b", False)]
     assert res["passed"] and "1 of 2" in evaluate.recall_report(res)
+
+
+@pytest.mark.parametrize("effect,ok", [
+    ("Employment rose by 12 percent after two years.", True),
+    ("Earnings fell slightly, with no significant effect on wages.", True),
+    ("", False),
+    ("not stated in the evaluation", False),
+    ("The trial is due to end on December 31, 2026, and its results are not reported yet.", False),
+    ("The study is still ongoing.", False),
+    ("Results are forthcoming.", False),
+])
+def test_an_evaluation_must_report_a_result(effect, ok):
+    assert ladder.reports_a_result(effect) is ok
+    g = ladder.grade(_ev(effect_summary=effect), implementer="Gov", method_grounded=True)
+    assert (g["level"] == 4) is ok
+    if not ok:
+        assert g["level"] == 2 and any("no result yet" in c for c in g["caps"])
