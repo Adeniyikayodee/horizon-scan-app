@@ -294,3 +294,11 @@ def test_cli_args_carry_model_and_effort():
     from scan import client
     a = client._cli_args({"type": "object"}, True, "/tmp/p.md", "claude-sonnet-5", "low")
     assert a[a.index("--model") + 1] == "claude-sonnet-5" and a[a.index("--effort") + 1] == "low"
+
+
+def test_web_steps_get_room_to_search():
+    from scan import client, config
+    web = client._cli_args({}, True, "/tmp/p", "m", "high")
+    assert int(web[web.index("--max-turns") + 1]) == config.CLI_MAX_TURNS_WEB >= 20
+    off = client._cli_args({}, False, "/tmp/p", "m", "low")
+    assert int(off[off.index("--max-turns") + 1]) == 3

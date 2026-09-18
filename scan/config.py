@@ -96,6 +96,10 @@ CLI_ROUTING: dict[str, dict[str, str]] = {
 # "one" sends every step to CLI_MODEL, which is how the pilot ran, for comparison.
 CLI_ROUTE_MODE = os.environ.get("CLI_ROUTE_MODE", "tiered")
 CLI_TIMEOUT = float(os.environ.get("CLI_TIMEOUT", "900"))
+# Steps that search need room to search, look, and search again. At 12 turns the
+# strongest model ran out mid-search on two golden programs, which read as "no
+# evaluation found" rather than as the limit it was.
+CLI_MAX_TURNS_WEB = int(os.environ.get("CLI_MAX_TURNS_WEB", "24"))
 
 # Concurrency for the per-org fan-out.
 MAX_CONCURRENCY = int(os.environ.get("MAX_CONCURRENCY", "8"))

@@ -234,7 +234,7 @@ def _cli_args(schema: dict[str, Any], web: bool, prompt_file: str, model: str, e
             "--tools", tools, "--allowedTools", tools,
             # isolation: no project or user settings, no CLAUDE.md, no MCP servers, no saved session
             "--setting-sources", "", "--strict-mcp-config", "--no-session-persistence",
-            "--max-turns", str(config.MAX_TOOL_TURNS + 4 if web else 3)]
+            "--max-turns", str(config.CLI_MAX_TURNS_WEB if web else 3)]
 
 
 def _parse_cli(raw: str) -> dict[str, Any]:
