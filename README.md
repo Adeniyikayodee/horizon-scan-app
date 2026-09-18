@@ -39,6 +39,30 @@ The governing principle is that the models propose and read while the code
 verifies and enforces. A claim reads as verified only when its quote is found in
 the cited source.
 
+## Two scans, two engines
+
+The scan and the engine are separate choices, in the app's sidebar or on the command line.
+
+- **Scan.** *Horizon* looks for new areas the Hub could enter. *YES* looks for proven program
+  designs for youth employment and skills, grades them on their evidence, and adds a funder scan.
+  On the command line: `--profile yes`, or nothing for the horizon scan.
+- **Engine.** *Model 1* runs every step through the local Claude Code command on the analyst's own
+  login, for runs on this machine. *Model 2* runs through OpenRouter on its key and balance. On the
+  command line: `--provider claude-cli` or `--provider openrouter`.
+
+Model 1 sends each step to the model that suits it, and either scan routes the same way:
+
+| Step | Model | Effort |
+|---|---|---|
+| Evidence search, theming, the brief, the rewrite pass | Opus 5 | high |
+| Reader, Evidence reader, Verifier | Opus 5 | medium |
+| Scout, Librarian, Discovery, funders, corroboration | Sonnet 5 | low to medium |
+| Scorer, Auditor, hunches, framing added organizations | Haiku 4.5 | low |
+
+The reading steps stay on the strongest model because their quotes are checked against the source
+word for word. `CLI_ROUTE_MODE=one` sends every step to one model, which is how the first Opus 5
+pilot ran, so the two can be compared. A profile can override any row with its own `models` block.
+
 ## Setup
 
 ```

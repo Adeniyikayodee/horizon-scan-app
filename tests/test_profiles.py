@@ -122,3 +122,18 @@ def test_unknown_profile_stops(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "PROFILES_DIR", tmp_path)
     with pytest.raises(SystemExit):
         config.use_profile("nope")
+
+
+def test_both_scans_route_the_same_way(monkeypatch):
+    """Tiered routing belongs to the engine, so the horizon scan and the YES scan each
+    get the same model for the same step."""
+    import json as _json
+    from pathlib import Path
+    from scan import client
+    monkeypatch.setattr(config, "CLI_ROUTE_MODE", "tiered")
+    monkeypatch.setattr(config, "SPEC", None)
+    horizon = {s: client.cli_route(s) for s in ("scout", "reader", "scorer", "themer", "synthesizer")}
+    yes = _json.loads((Path(__file__).resolve().parent.parent / "profiles" / "yes" / "profile.json").read_text())
+    monkeypatch.setattr(config, "SPEC", yes)
+    assert {s: client.cli_route(s) for s in horizon} == horizon
+    assert horizon["reader"][0] == "claude-opus-5" and horizon["scorer"][0].startswith("claude-haiku")
