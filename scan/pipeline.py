@@ -123,7 +123,40 @@ def _org_path(org: dict[str, str]) -> Path:
     return config.ORGS_WORK / f"{_org_key(org)}.jsonl"
 
 
+def cache_stamp() -> dict[str, str]:
+    """What a cached result depends on. Saved work is reused only when all of it
+    matches: the rules in the code, the profile's settings and wording, and the engine
+    and models that produced it. Change any of them and that organization is scanned
+    again, so a saved run never mixes results made under different rules."""
+    sp = config.active_spec()
+    spec_json = json.dumps({k: sp.get(k) for k in (
+        "research_question", "lenses", "criteria", "context", "prompts", "themes_seed", "windows",
+        "evidence", "funders", "reader_fields", "portfolio_mode", "postures", "tags", "lead",
+        "drop_bands", "excluded_areas", "unverifiable_source_types", "one_report_per_candidate",
+    )}, sort_keys=True, ensure_ascii=False)
+    models = "one-model" if config.CLI_ROUTE_MODE == "one" else "tiered"
+    engine = (f"{config.PROVIDER}:{config.CLI_MODEL}:{models}" if config.PROVIDER == "claude-cli"
+              else f"{config.PROVIDER}:{config.OR_MODEL}:{config.OR_MODEL_STRONG}")
+    return {"rules": config.RULES_VERSION,
+            "profile": spec.profile_name(sp),
+            "settings": hashlib.sha1(spec_json.encode("utf-8")).hexdigest()[:12],
+            "engine": engine,
+            "scope": config.SCAN_MODE}
+
+
+def stamp_matches(payload: dict[str, Any] | None) -> tuple[bool, str]:
+    """Whether saved work was made under today's rules, settings, and engine."""
+    if not payload:
+        return False, "not scanned yet"
+    old, now = payload.get("stamp") or {}, cache_stamp()
+    if not old:
+        return False, "saved before runs recorded their settings"
+    diff = [k for k in now if old.get(k) != now[k]]
+    return (not diff), ("" if not diff else "changed since it was saved: " + ", ".join(diff))
+
+
 def _write_org(org: dict[str, str], payload: dict[str, Any]) -> None:
+    payload = {**payload, "stamp": cache_stamp(), "scanned": _today()}
     with _org_path(org).open("w", encoding="utf-8") as f:
         f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
@@ -581,7 +614,7 @@ async def run_funders(ctx, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     async def one(f: dict[str, Any]) -> dict[str, Any]:
         cached = funders.read_cached(f["name"])
-        if cached is not None:
+        if cached is not None and stamp_matches(cached)[0]:
             return cached
         async with sem:
             try:
@@ -589,7 +622,7 @@ async def run_funders(ctx, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 rec = await funders.ground({**f, **raw})
             except Exception as e:
                 return {**f, "error": str(e)[:160]}
-        funders.write_cached(f["name"], rec)
+        funders.write_cached(f["name"], {**rec, "stamp": cache_stamp(), "scanned": _today()})
         return rec
 
     records = await asyncio.gather(*[one(f) for f in todo])
@@ -720,10 +753,22 @@ async def run_stage1(only: Path | None = None, progress: Progress = None) -> Non
 
     # an organization is done only when it was scanned without errors, so a run that
     # hit a credit limit or an outage is picked up again rather than kept as a result
-    todo = [o for o in orgs if not _scanned_cleanly(_read_org(o))]
+    todo, stale = [], []
+    for o in orgs:
+        payload = _read_org(o)
+        fresh, why = stamp_matches(payload)
+        if not _scanned_cleanly(payload):
+            todo.append(o)
+        elif not fresh:
+            todo.append(o)
+            stale.append((o["name"], why))
     done = len(orgs) - len(todo)
-    print(f"stage 1: {len(orgs)} orgs, {done} cached, {len(todo)} to scan, "
+    print(f"stage 1: {len(orgs)} orgs, {done} reused from the saved run, {len(todo)} to scan, "
           f"concurrency {config.MAX_CONCURRENCY}")
+    for name, why in stale[:5]:
+        print(f"    scanning {name} again, {why}")
+    if len(stale) > 5:
+        print(f"    and {len(stale) - 5} more")
 
     results = await asyncio.gather(*[_process_org(ctx, o, sem, progress) for o in todo])
     for r in results:
@@ -1008,13 +1053,41 @@ def prune_runs(keep: int = 20, dry: bool = False) -> list[str]:
     return [d.name for d in doomed]
 
 
+def saved_work() -> dict[str, Any]:
+    """What is saved for this scan, and how much of it can be picked up again."""
+    orgs = io_xlsx.read_orgs() if config.ORG_SHEET.exists() else []
+    reusable, rescan, rows = [], [], 0
+    for o in orgs:
+        payload = _read_org(o)
+        if payload is None:
+            continue
+        rows += len(payload.get("rows", []))
+        fresh, why = stamp_matches(payload)
+        (reusable if fresh and _scanned_cleanly(payload) else rescan).append(
+            (o["name"], "" if fresh else why or "stopped with an error"))
+    funder_files = list((config.WORK_DIR / "funders").glob("*.json"))
+    return {"orgs": len(orgs), "reusable": reusable, "rescan": rescan, "rows": rows,
+            "funders": len(funder_files),
+            "longlist": (config.REVIEW_DIR / "longlist.xlsx").exists(),
+            "outputs": sorted(p.name for p in config.OUT_DIR.glob("*") if p.is_file()),
+            "stamp": cache_stamp()}
+
+
 def status() -> None:
+    s = saved_work()
+    print(f"scan: {s['stamp']['profile']}   rules {s['stamp']['rules']}   engine {s['stamp']['engine']}")
+    print(f"organizations on the list: {s['orgs']}")
+    print(f"  ready to pick up again: {len(s['reusable'])}")
+    print(f"  to scan again:          {len(s['rescan'])}")
+    for name, why in s["rescan"][:8]:
+        print(f"    {name}: {why}")
+    if len(s["rescan"]) > 8:
+        print(f"    and {len(s['rescan']) - 8} more")
+    print(f"programs found and saved: {s['rows']}")
+    print(f"funders saved: {s['funders']}")
+    print(f"review list written: {'yes' if s['longlist'] else 'no'}")
+    print("finished documents: " + (", ".join(s["outputs"]) if s["outputs"] else "none yet"))
     manifest = _load_manifest()
-    if not manifest:
-        print("no runs yet")
-        return
-    rows = sum(m.get("rows", 0) for m in manifest.values())
     errs = [k for k, m in manifest.items() if m.get("error")]
-    print(f"orgs scanned: {len(manifest)}, rows: {rows}, errors: {len(errs)}")
     for k in errs:
-        print(f"  ! {k}: {manifest[k]['error']}")
+        print(f"  ! {k}: {manifest[k]['error'][:120]}")

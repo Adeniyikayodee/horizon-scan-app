@@ -137,3 +137,44 @@ def test_both_scans_route_the_same_way(monkeypatch):
     monkeypatch.setattr(config, "SPEC", yes)
     assert {s: client.cli_route(s) for s in horizon} == horizon
     assert horizon["reader"][0] == "claude-opus-5" and horizon["scorer"][0].startswith("claude-haiku")
+
+
+def test_saved_work_is_reused_only_when_nothing_that_matters_changed(tmp_path, monkeypatch):
+    from scan import pipeline
+    monkeypatch.setattr(config, "SPEC", {**spec.DEFAULT_SPEC, "profile": "yes"})
+    monkeypatch.setattr(config, "PROVIDER", "claude-cli")
+    stamp = pipeline.cache_stamp()
+    fresh = {"rows": [], "dropped": [], "stamp": stamp}
+    assert pipeline.stamp_matches(fresh)[0]
+    assert pipeline.stamp_matches(None) == (False, "not scanned yet")
+    assert pipeline.stamp_matches({"rows": []})[1] == "saved before runs recorded their settings"
+    # a rule change, a wording change, and an engine change each force a rescan
+    monkeypatch.setattr(config, "RULES_VERSION", "9999-01-01")
+    assert "rules" in pipeline.stamp_matches(fresh)[1]
+    monkeypatch.setattr(config, "RULES_VERSION", stamp["rules"])
+    monkeypatch.setattr(config, "SPEC", {**spec.DEFAULT_SPEC, "profile": "yes", "research_question": "other"})
+    assert "settings" in pipeline.stamp_matches(fresh)[1]
+    monkeypatch.setattr(config, "SPEC", {**spec.DEFAULT_SPEC, "profile": "yes"})
+    monkeypatch.setattr(config, "PROVIDER", "openrouter")
+    assert "engine" in pipeline.stamp_matches(fresh)[1]
+
+
+def test_status_reports_saved_work(tmp_path, monkeypatch, capsys):
+    from scan import io_xlsx, pipeline
+    for k, v in (("WORK_DIR", tmp_path), ("ORGS_WORK", tmp_path / "orgs"), ("REVIEW_DIR", tmp_path / "r"),
+                 ("OUT_DIR", tmp_path / "o"), ("INPUT_DIR", tmp_path), ("ORG_SHEET", tmp_path / "organizations.xlsx"),
+                 ("MANIFEST", tmp_path / "m.json")):
+        monkeypatch.setattr(config, k, v)
+    for d in (config.ORGS_WORK, config.REVIEW_DIR, config.OUT_DIR):
+        d.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(config, "SPEC", None)
+    io_xlsx.write_orgs_list([{"name": "Org One"}, {"name": "Org Two"}])
+    orgs = io_xlsx.read_orgs()
+    pipeline._write_org(orgs[0], {"org": "Org One", "rows": [{"name": "a"}], "dropped": []})
+    pipeline._write_org(orgs[1], {"org": "Org Two", "rows": [], "dropped": [{"stage": "error"}]})
+    s = pipeline.saved_work()
+    assert [n for n, _ in s["reusable"]] == ["Org One"] and s["rows"] == 1
+    assert s["rescan"][0][0] == "Org Two"
+    pipeline.status()
+    out = capsys.readouterr().out
+    assert "ready to pick up again: 1" in out and "to scan again:          1" in out

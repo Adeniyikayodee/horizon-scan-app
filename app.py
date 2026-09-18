@@ -13,6 +13,7 @@ import json
 import os
 import re
 import uuid
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
@@ -537,10 +538,74 @@ def run_async(coro):
     return asyncio.new_event_loop().run_until_complete(coro)
 
 
-# --- session setup ---
+SCAN_LABELS = {None: "Horizon scan", "yes": "YES program scan"}
+
+
+def saved_runs() -> list[dict]:
+    """Every run saved on this computer, newest first, with enough to recognise it."""
+    root = config.ROOT / "runs"
+    out = []
+    for d in sorted([p for p in root.glob("*") if p.is_dir()], key=lambda p: p.stat().st_mtime, reverse=True):
+        spec_path = d / "work" / "spec.json"
+        profile = None
+        if spec_path.exists():
+            try:
+                profile = json.loads(spec_path.read_text()).get("profile")
+            except Exception:
+                profile = None
+        orgs = 0
+        sheet = d / "input" / "organizations.xlsx"
+        if sheet.exists():
+            try:
+                orgs = len(io_xlsx.read_orgs(sheet))
+            except Exception:
+                orgs = 0
+        done = bool(list((d / "out").glob("*.docx")) or list((d / "out").glob("*.xlsx")))
+        out.append({"id": d.name, "profile": profile, "orgs": orgs, "done": done,
+                    "when": datetime.fromtimestamp(d.stat().st_mtime).strftime("%B %-d, %-I:%M %p")})
+    return out
+
+
+def pick_up_where_it_stopped() -> None:
+    """Rebuild the page from the files on disk. A refresh, a closed laptop, or a new
+    day lands back on the step the run had reached, since the work is saved as it goes."""
+    ss = st.session_state
+    spec_path = config.WORK_DIR / "spec.json"
+    if spec_path.exists() and "spec" not in ss:
+        try:
+            saved = json.loads(spec_path.read_text())
+            ss.spec = saved
+            ss.scan_pick = SCAN_LABELS.get(saved.get("profile"), "Horizon scan")
+            ss.scan_loaded = ss.scan_pick
+        except Exception:
+            pass
+    if config.ORG_SHEET.exists():
+        try:
+            ss.roster = io_xlsx.read_orgs()
+            ss.n_orgs = len(ss.roster)
+        except Exception:
+            pass
+    longlist = config.REVIEW_DIR / "longlist.xlsx"
+    if longlist.exists():
+        try:
+            df = pd.read_excel(longlist)
+            ss.n_rows = len(df)
+            ss.n_verified = int((df["verification"] == "verified").sum())
+        except Exception:
+            pass
+    finished = [p for p in config.OUT_DIR.glob("*") if p.suffix in (".docx", ".xlsx", ".md")]
+    ss.step = 4 if finished else 3 if longlist.exists() else 2 if ss.get("n_orgs") else 1
+    if finished:
+        ss.generated = True
+
+
+# --- session setup: the run id lives in the page address, so a refresh keeps the run ---
 if "run_id" not in st.session_state:
-    st.session_state.run_id = uuid.uuid4().hex[:10]
+    st.session_state.run_id = st.query_params.get("run") or uuid.uuid4().hex[:10]
     st.session_state.step = 1
+    apply_run_dir(st.session_state.run_id)
+    pick_up_where_it_stopped()
+st.query_params["run"] = st.session_state.run_id
 apply_run_dir(st.session_state.run_id)
 
 if not gate():
@@ -587,8 +652,22 @@ with st.sidebar:
     config.SCAN_MODE = "global" if scope == "Global" else "africa"
     if config.PROVIDER == "openrouter" and not config.OPENROUTER_API_KEY:
         st.error("Model 2 has no key on this server. Add it to .streamlit/secrets.toml.")
+    runs = [r for r in saved_runs() if r["id"] != st.session_state.run_id]
+    if runs:
+        labels = {f"{SCAN_LABELS.get(r['profile'], 'Horizon scan')}, {r['orgs']} organizations, "
+                  f"{r['when']}{', finished' if r['done'] else ''}": r["id"] for r in runs[:12]}
+        pick = st.selectbox("Open a saved run", ["This run"] + list(labels))
+        if pick != "This run":
+            st.query_params["run"] = labels[pick]
+            for k in ("run_id", "step", "generated", "spec", "roster", "scan_loaded", "n_orgs", "n_rows",
+                      "n_verified"):
+                st.session_state.pop(k, None)
+            st.rerun()
+    st.caption(f"This run is saved as {st.session_state.run_id}. Keep the page address to come back to it.")
     if st.button("Start over"):
-        for k in ("run_id", "step", "generated"):
+        st.query_params.clear()
+        for k in ("run_id", "step", "generated", "spec", "roster", "scan_loaded", "n_orgs", "n_rows",
+                  "n_verified"):
             st.session_state.pop(k, None)
         st.rerun()
 

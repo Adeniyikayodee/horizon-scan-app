@@ -63,6 +63,26 @@ The reading steps stay on the strongest model because their quotes are checked a
 word for word. `CLI_ROUTE_MODE=one` sends every step to one model, which is how the first Opus 5
 pilot ran, so the two can be compared. A profile can override any row with its own `models` block.
 
+## Picking a run back up
+
+Work is saved as it goes, so a scan can be stopped and continued later.
+
+- **In the app.** The run's name is in the page address, so a refresh, a closed laptop, or coming
+  back tomorrow lands on the step the run had reached. The sidebar lists earlier runs under *Open a
+  saved run*, and *Start over* begins a fresh one.
+- **On the command line.** Re-run the same stage. Organizations already scanned are reused, and the
+  scan picks up where it stopped. `python -m scan status --profile yes --provider claude-cli` says
+  what is saved, what would be scanned again, and why.
+
+**Saved work is reused only when it is still valid.** Each organization and funder is stamped with
+the rules version in `config.RULES_VERSION`, a fingerprint of the profile's settings and wording, the
+engine and models that produced it, and the scope. If any of those changed, that organization is
+scanned again rather than reused, so a picked-up run never mixes results graded under different
+rules. Bump `RULES_VERSION` whenever a rule that decides a result changes.
+
+Documents themselves are fetched fresh on every run. That costs time, not quality, and no model
+calls.
+
 ## Setup
 
 ```

@@ -19,8 +19,11 @@ def main() -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("init", help="write a sample input/organizations.xlsx")
-    st = sub.add_parser("status", help="show progress and errors")
+    st = sub.add_parser("status", help="show what is saved and what would be scanned again")
     st.add_argument("--profile", default=None, help="scan profile (default horizon)")
+    st.add_argument("--provider", choices=["anthropic", "openrouter", "claude-cli"], default=None,
+                    help="the engine the saved work was made on, so the report compares like with like")
+    st.add_argument("--roster", type=Path, default=None, help="organization sheet, if not the profile's own")
 
     pr = sub.add_parser("prune", help="delete all but the newest run folders under runs/")
     pr.add_argument("--keep", type=int, default=20, help="how many runs to keep (default 20)")
@@ -59,6 +62,10 @@ def main() -> None:
         print(f"wrote {p}. Edit it, then: python -m scan run --stage 1")
         return
     if args.cmd == "status":
+        if args.provider:
+            config.PROVIDER = args.provider
+        if args.roster:
+            config.ORG_SHEET = args.roster
         pipeline.status()
         return
     if args.cmd == "prune":

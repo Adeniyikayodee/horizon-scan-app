@@ -290,6 +290,13 @@ def require_key() -> None:
         )
 
 
+# Bump this when a rule that decides a result changes: the evidence ladder and its
+# caps, the posture gates, the windows, the policy checks. Cached work carrying an
+# older number is scanned again rather than reused, so a saved run can never serve a
+# result graded under rules that no longer apply.
+RULES_VERSION = "2026-09-18"
+
+
 # --- scan profiles ---
 PROFILES_DIR = ROOT / "profiles"
 
