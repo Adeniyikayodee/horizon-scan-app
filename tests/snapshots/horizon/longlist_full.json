@@ -1,0 +1,327 @@
+[
+ {
+  "access_note": "Published 2024.",
+  "accessed": "<DATE>",
+  "audit": {
+   "_coerced": [],
+   "notes": "Chain is internally consistent.",
+   "quote_supports_claim": true,
+   "score_matches_evidence": "consistent",
+   "source_is_primary": true,
+   "verdict": "pass"
+  },
+  "band": "emerging",
+  "coerced_fields": [],
+  "date_status": "in window",
+  "evidence": "A pilot showed measurable gains in output and jobs.",
+  "flagged": false,
+  "flags": [],
+  "locator": "Section 3, Results, page 14",
+  "name": "African Economic Research Consortium (AERC) evidence-to-policy lab",
+  "org": "African Economic Research Consortium (AERC)",
+  "overall": "high",
+  "queries": [
+   "African Economic Research Consortium (AERC) Africa economic transformation recent"
+  ],
+  "quote_grounded": null,
+  "quotes": [
+   "The program raised local value retention by a measurable margin."
+  ],
+  "read_chars": 0,
+  "reading_grounded": null,
+  "report_date": "2024",
+  "report_title": "African Economic Research Consortium (AERC) value-addition working paper",
+  "rid": "R0001",
+  "score": {
+   "_coerced": [],
+   "african_traction": "strong",
+   "evidence_basis": "The pilot's measured gain in local value retention.",
+   "mandate_fit": "strong",
+   "overall": "high",
+   "reason_african_traction": "Grounded in the evidence on record.",
+   "reason_mandate_fit": "Grounded in the evidence on record.",
+   "reason_research_to_policy": "Grounded in the evidence on record.",
+   "reason_white_space": "Grounded in the evidence on record.",
+   "research_to_policy": "partial",
+   "self_check": "consistent",
+   "self_check_note": "The marks follow from the evidence.",
+   "white_space": "partial"
+  },
+  "source_chars": 0,
+  "source_reachable": true,
+  "source_truncated": false,
+  "source_type": "webpage",
+  "source_year": 2024,
+  "trail": {
+   "auditor": {
+    "notes": "Chain is internally consistent.",
+    "quote_supports_claim": true,
+    "score_matches_evidence": "consistent",
+    "source_is_primary": true,
+    "verdict": "pass"
+   },
+   "reader": {
+    "access_note": "Published 2024.",
+    "accessed": "<DATE>",
+    "band": "emerging",
+    "locator": "Section 3, Results, page 14",
+    "quotes": [
+     "The program raised local value retention by a measurable margin."
+    ],
+    "source_url": "https://example.org/report-value-addition.pdf",
+    "verbatim": true
+   },
+   "scorer": {
+    "evidence_basis": "The pilot's measured gain in local value retention.",
+    "self_check": "consistent",
+    "self_check_note": "The marks follow from the evidence."
+   },
+   "scout": {
+    "queries": [
+     "African Economic Research Consortium (AERC) Africa economic transformation recent"
+    ],
+    "source_type": "webpage"
+   },
+   "verifier": {
+    "claim_supported": false,
+    "discrepancies": [],
+    "figure_check": "n/a",
+    "primary_url": "",
+    "quote_grounded": null
+   }
+  },
+  "uptake": "One government has begun to adopt it.",
+  "url": "https://example.org/report-value-addition.pdf",
+  "verbatim": true,
+  "verification": {
+   "_coerced": [],
+   "claim_supported": false,
+   "confirming_quote": "",
+   "discrepancies": [],
+   "figure_check": "n/a",
+   "note": "Rests on secondary sources.",
+   "primary_url": "",
+   "status": "partial"
+  },
+  "what": "An approach that adds value in a new sector.",
+  "year": "2025"
+ },
+ {
+  "access_note": "Published 2024.",
+  "accessed": "<DATE>",
+  "audit": {
+   "_coerced": [],
+   "notes": "Score looks high.",
+   "quote_supports_claim": false,
+   "score_matches_evidence": "overstated",
+   "source_is_primary": true,
+   "verdict": "flag"
+  },
+  "band": "frontier",
+  "coerced_fields": [],
+  "date_status": "in window",
+  "evidence": "A pilot showed measurable gains in output and jobs.",
+  "flagged": true,
+  "flags": [
+   "Score looks high.",
+   "quote does not support the claim",
+   "score overstated vs evidence"
+  ],
+  "locator": "Section 3, Results, page 14",
+  "name": "Policy Center for the New South value-addition initiative",
+  "org": "Policy Center for the New South",
+  "overall": "high",
+  "queries": [
+   "Policy Center for the New South Africa economic transformation recent"
+  ],
+  "quote_grounded": null,
+  "quotes": [
+   "The program raised local value retention by a measurable margin."
+  ],
+  "read_chars": 0,
+  "reading_grounded": null,
+  "report_date": "2024",
+  "report_title": "Policy Center for the New South value-addition working paper",
+  "rid": "R0002",
+  "score": {
+   "_coerced": [],
+   "african_traction": "strong",
+   "evidence_basis": "The pilot's measured gain in local value retention.",
+   "mandate_fit": "strong",
+   "overall": "high",
+   "reason_african_traction": "Grounded in the evidence on record.",
+   "reason_mandate_fit": "Grounded in the evidence on record.",
+   "reason_research_to_policy": "Grounded in the evidence on record.",
+   "reason_white_space": "Grounded in the evidence on record.",
+   "research_to_policy": "partial",
+   "self_check": "consistent",
+   "self_check_note": "The marks follow from the evidence.",
+   "white_space": "partial"
+  },
+  "source_chars": 0,
+  "source_reachable": true,
+  "source_truncated": false,
+  "source_type": "report",
+  "source_year": 2024,
+  "trail": {
+   "auditor": {
+    "notes": "Score looks high.",
+    "quote_supports_claim": false,
+    "score_matches_evidence": "overstated",
+    "source_is_primary": true,
+    "verdict": "flag"
+   },
+   "reader": {
+    "access_note": "Published 2024.",
+    "accessed": "<DATE>",
+    "band": "frontier",
+    "locator": "Section 3, Results, page 14",
+    "quotes": [
+     "The program raised local value retention by a measurable margin."
+    ],
+    "source_url": "https://example.org/report-value-addition.pdf",
+    "verbatim": true
+   },
+   "scorer": {
+    "evidence_basis": "The pilot's measured gain in local value retention.",
+    "self_check": "consistent",
+    "self_check_note": "The marks follow from the evidence."
+   },
+   "scout": {
+    "queries": [
+     "Policy Center for the New South Africa economic transformation recent"
+    ],
+    "source_type": "report"
+   },
+   "verifier": {
+    "claim_supported": false,
+    "discrepancies": [],
+    "figure_check": "n/a",
+    "primary_url": "",
+    "quote_grounded": null
+   }
+  },
+  "uptake": "One government has begun to adopt it.",
+  "url": "https://example.org/report-value-addition.pdf",
+  "verbatim": true,
+  "verification": {
+   "_coerced": [],
+   "claim_supported": false,
+   "confirming_quote": "",
+   "discrepancies": [],
+   "figure_check": "n/a",
+   "note": "Rests on secondary sources.",
+   "primary_url": "",
+   "status": "partial"
+  },
+  "what": "An approach that adds value in a new sector.",
+  "year": "2024"
+ },
+ {
+  "access_note": "Published 2024.",
+  "accessed": "<DATE>",
+  "audit": {
+   "_coerced": [],
+   "notes": "Chain is internally consistent.",
+   "quote_supports_claim": true,
+   "score_matches_evidence": "consistent",
+   "source_is_primary": true,
+   "verdict": "pass"
+  },
+  "band": "frontier",
+  "coerced_fields": [],
+  "date_status": "in window",
+  "evidence": "A pilot showed measurable gains in output and jobs.",
+  "flagged": false,
+  "flags": [],
+  "locator": "Section 3, Results, page 14",
+  "name": "UN Trade and Development (UNCTAD) value-addition initiative",
+  "org": "UN Trade and Development (UNCTAD)",
+  "overall": "medium",
+  "queries": [
+   "UN Trade and Development (UNCTAD) Africa economic transformation recent"
+  ],
+  "quote_grounded": null,
+  "quotes": [
+   "The program raised local value retention by a measurable margin."
+  ],
+  "read_chars": 0,
+  "reading_grounded": null,
+  "report_date": "2024",
+  "report_title": "UN Trade and Development (UNCTAD) value-addition working paper",
+  "rid": "R0003",
+  "score": {
+   "_coerced": [],
+   "african_traction": "partial",
+   "evidence_basis": "The pilot's measured gain in local value retention.",
+   "mandate_fit": "partial",
+   "overall": "medium",
+   "reason_african_traction": "Grounded in the evidence on record.",
+   "reason_mandate_fit": "Grounded in the evidence on record.",
+   "reason_research_to_policy": "Grounded in the evidence on record.",
+   "reason_white_space": "Grounded in the evidence on record.",
+   "research_to_policy": "strong",
+   "self_check": "consistent",
+   "self_check_note": "The marks follow from the evidence.",
+   "white_space": "strong"
+  },
+  "source_chars": 0,
+  "source_reachable": true,
+  "source_truncated": false,
+  "source_type": "report",
+  "source_year": 2024,
+  "trail": {
+   "auditor": {
+    "notes": "Chain is internally consistent.",
+    "quote_supports_claim": true,
+    "score_matches_evidence": "consistent",
+    "source_is_primary": true,
+    "verdict": "pass"
+   },
+   "reader": {
+    "access_note": "Published 2024.",
+    "accessed": "<DATE>",
+    "band": "frontier",
+    "locator": "Section 3, Results, page 14",
+    "quotes": [
+     "The program raised local value retention by a measurable margin."
+    ],
+    "source_url": "https://example.org/report-value-addition.pdf",
+    "verbatim": true
+   },
+   "scorer": {
+    "evidence_basis": "The pilot's measured gain in local value retention.",
+    "self_check": "consistent",
+    "self_check_note": "The marks follow from the evidence."
+   },
+   "scout": {
+    "queries": [
+     "UN Trade and Development (UNCTAD) Africa economic transformation recent"
+    ],
+    "source_type": "report"
+   },
+   "verifier": {
+    "claim_supported": false,
+    "discrepancies": [],
+    "figure_check": "n/a",
+    "primary_url": "",
+    "quote_grounded": null
+   }
+  },
+  "uptake": "One government has begun to adopt it.",
+  "url": "https://example.org/report-value-addition.pdf",
+  "verbatim": true,
+  "verification": {
+   "_coerced": [],
+   "claim_supported": false,
+   "confirming_quote": "",
+   "discrepancies": [],
+   "figure_check": "n/a",
+   "note": "Rests on secondary sources.",
+   "primary_url": "",
+   "status": "partial"
+  },
+  "what": "An approach that adds value in a new sector.",
+  "year": "2024"
+ }
+]

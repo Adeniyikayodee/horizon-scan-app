@@ -39,6 +39,59 @@ The governing principle is that the models propose and read while the code
 verifies and enforces. A claim reads as verified only when its quote is found in
 the cited source.
 
+## Two scans, two engines
+
+The scan and the engine are separate choices, in the app's sidebar or on the command line.
+
+- **Scan.** *Horizon* looks for new areas the Hub could enter. *YES* looks for the research gaps in
+  youth employment and skills: where the evidence is thin, absent, or unaddressed across a whole
+  system, what it would take to fill each gap, and who funds work of that kind. It grades how well
+  covered each question already is, maps that coverage country by country, and adds a funder scan.
+  On the command line: `--profile yes`, or nothing for the horizon scan.
+
+  The YES scan reads the evidence level as **coverage**, not merit. A question with an independent
+  trial behind it is settled, so its posture is *use*; one with a credible comparison behind it is
+  half settled, so *scope*; one with neither is open, so *commission*. That inversion is in the
+  profile's gates, and the code sets the posture from the band. It also changes what earns a place
+  in the map: a thin area is a finding, so what is held back is the opposite, a single project
+  write-up that names no open question and carries no evidence firm enough to act on.
+- **Engine.** *Model 1* runs every step through the local Claude Code command on the analyst's own
+  login, for runs on this machine. *Model 2* runs through OpenRouter on its key and balance. On the
+  command line: `--provider claude-cli` or `--provider openrouter`.
+
+Model 1 sends each step to the model that suits it, and either scan routes the same way:
+
+| Step | Model | Effort |
+|---|---|---|
+| Evidence search, theming, the gap register, the brief, the rewrite pass | Opus 5 | high |
+| Reader, Evidence reader, Verifier | Opus 5 | medium |
+| Scout, Librarian, Discovery, funders, corroboration | Sonnet 5 | low to medium |
+| Scorer, Auditor, hunches, framing added organizations | Haiku 4.5 | low |
+
+The reading steps stay on the strongest model because their quotes are checked against the source
+word for word. `CLI_ROUTE_MODE=one` sends every step to one model, which is how the first Opus 5
+pilot ran, so the two can be compared. A profile can override any row with its own `models` block.
+
+## Picking a run back up
+
+Work is saved as it goes, so a scan can be stopped and continued later.
+
+- **In the app.** The run's name is in the page address, so a refresh, a closed laptop, or coming
+  back tomorrow lands on the step the run had reached. The sidebar lists earlier runs under *Open a
+  saved run*, and *Start over* begins a fresh one.
+- **On the command line.** Re-run the same stage. Organizations already scanned are reused, and the
+  scan picks up where it stopped. `python -m scan status --profile yes --provider claude-cli` says
+  what is saved, what would be scanned again, and why.
+
+**Saved work is reused only when it is still valid.** Each organization and funder is stamped with
+the rules version in `config.RULES_VERSION`, a fingerprint of the profile's settings and wording, the
+engine and models that produced it, and the scope. If any of those changed, that organization is
+scanned again rather than reused, so a picked-up run never mixes results graded under different
+rules. Bump `RULES_VERSION` whenever a rule that decides a result changes.
+
+Documents themselves are fetched fresh on every run. That costs time, not quality, and no model
+calls.
+
 ## Setup
 
 ```
@@ -87,12 +140,25 @@ streamlit run app.py
 
 Deploy privately so only the team can see it:
 
-1. Push this folder to a private GitHub repo.
-2. On share.streamlit.io, create a new app pointed at `scan-agents/app.py`.
-3. In Settings, set the app to private and invite the team by email. Add the
-   secrets `ANTHROPIC_API_KEY` and `APP_PASSWORD`, and `OPENROUTER_API_KEY` if you
-   use the compare-models path.
-4. Share the URL and the password with the invited team.
+1. Push to a private GitHub repo. This repository is the deploy root, so the app's
+   main file is `app.py`, not a path inside a folder.
+2. On share.streamlit.io, create a new app pointed at `app.py` on the branch you
+   want the team to run. A private repo needs Streamlit's GitHub authorization to
+   include private repositories; without it the deploy cannot read the code.
+3. In Settings, restrict who can view the app and invite the team by email. Repo
+   privacy protects the source, not the app's URL, so set `APP_PASSWORD` as well
+   and treat it as the real gate.
+4. Add the secrets the server needs: `OPENROUTER_API_KEY` for Model 2, and
+   `APP_PASSWORD`. Optional: `OR_MODEL` and `OR_MODEL_STRONG` to change which
+   models Model 2 uses, `SCAN_BUDGET_USD` to stop a run at a set spend, and
+   `ANTHROPIC_API_KEY` only if you want the native Anthropic path rather than
+   OpenRouter.
+5. Share the URL and the password with the invited team.
+
+Two things to know about a deployed copy. Model 1 runs the local Claude Code
+command, which does not exist on a server, so the app offers Model 2 alone there.
+Streamlit Community Cloud storage is temporary, so saved runs do not survive a
+restart or a redeploy; download the deliverables you want to keep.
 
 ## Building the organization roster
 

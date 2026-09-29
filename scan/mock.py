@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import config, spec as spec_mod
+from . import config, replay, spec as spec_mod
 
 _MARKS = ["strong", "partial", "weak"]
 
@@ -40,7 +40,9 @@ def _read(subj: str, h: int) -> dict[str, Any]:
             "uptake": "One government has begun to adopt it.",
             "quotes": ["The program raised local value retention by a measurable margin."],
             "locator": "Section 3, Results, page 14", "verbatim": True,
-            "access_note": "Published 2024."}
+            "access_note": "Published 2024.",
+            **{k: ("Ghana" if k == "countries" else f"Sample {k.replace('_', ' ')}.")
+               for k in spec_mod.reader_fields(config.active_spec())}}
 
 
 def _score(subj: str, h: int) -> dict[str, Any]:
@@ -123,6 +125,21 @@ def _themes(user: str) -> dict[str, Any]:
             d[c["key"]] = mark
         return d
 
+    sp = config.active_spec()
+    if sp.get("themes_seed"):
+        seed = sp["themes_seed"]
+        ps = spec_mod.postures(sp)
+        out = []
+        for i, s in enumerate(seed[:4]):
+            mem = members[i * 3:(i + 1) * 3]
+            if mem:
+                # the first theme asks for the top posture on purpose, so the gates are exercised
+                out.append(theme(s["name"].lower(), "new", ps[0] if i == 0 else ps[min(i, len(ps) - 1)],
+                                 "strong", mem, i == 0))
+        if len(members) > 12:
+            out.append(theme("An invented theme outside the list", "new", ps[0], "partial", members[12:13], False))
+        return {"themes": out}
+
     # Two of these are deliberately NON-compliant, so the dry run exercises the gates
     # rather than a set already in the right shape. The third is tagged existing but
     # asks to enter, which spec.coerce_theme must correct. The fourth is tagged new but
@@ -157,12 +174,33 @@ def _synth() -> dict[str, Any]:
     # spread the floor across the sections, with a little headroom so the mock always
     # clears its own gate even as the spec's section list changes
     per = max(1, int(floor * 1.15 / max(1, len(sections)) / len(_FILLER.split())) + 1)
-    parts = ["# Global scan, a wrap-up on the new areas to enter", "", _FILLER.strip(), ""]
+    filler = _FILLER
+    title = "# Global scan, a wrap-up on the new areas to enter"
+    if sp.get("brief_checks"):
+        filler = ("The scan found program designs that help young people find work, and some have strong proof "
+                  "while others still need more study; the team can use them to plan the next proposal. ")
+        title = "# Program designs that help young people find work"
+        ceiling = int(m.get("max_words") or floor * 1.2)
+        per = max(1, int((floor + ceiling) / 2 / max(1, len(sections)) / len(filler.split())))
+    parts = [title, "", filler.strip(), ""]
     for s in sections:
-        parts += [f"## {s['heading']}", "", (_FILLER * per).strip(), ""]
+        parts += [f"## {s['heading']}", "", ((filler if sp.get("brief_checks") else _FILLER) * per).strip(), ""]
     memo = "\n".join(parts)
     return {"memo_markdown": memo,
             "scorecard_intro": "Themes scored on the criteria, with two clean new areas to enter first."}
+
+
+def _gaps(user: str) -> dict[str, Any]:
+    themes = [l.split('"name": "')[1].split('"')[0] for l in user.splitlines() if '"name": "' in l]
+    print(f"  gaps     drafting the register across {len(set(themes))} themes")
+    return {"gaps": [{
+        "question": "What does it take for a training system to raise productivity across an economy?",
+        "theme": themes[0] if themes else "", "basis": "coverage", "quote": "",
+        "source": "The coverage map", "what_is_known": "Single programs are evaluated, systems are not.",
+        "countries_covered": ["Ghana"], "countries_missing": ["Niger"],
+        "inclusion_gap": "Not answered for young people with disabilities.",
+        "what_it_would_take": "A study across several countries that follows the system, not one project.",
+        "who_is_closest": "An independent research group."}]}
 
 
 def _hunches() -> dict[str, Any]:
@@ -172,11 +210,55 @@ def _hunches() -> dict[str, Any]:
         {"name": "Coastal sectors look open", "note": "The blue economy appears underserved."}]}
 
 
+def _find_evidence(subj: str, h: int) -> dict[str, Any]:
+    print(f"  evidence finding evaluations for {subj[:40]}")
+    return {"evaluations": [
+        {"title": "Impact evaluation of the program", "year": "2021",
+         "evaluator": "An independent research group", "type": "impact evaluation",
+         "url": f"https://example.org/eval{h % 97}.pdf"}]}
+
+
+def _read_evidence(subj: str, h: int) -> dict[str, Any]:
+    print(f"  evidence reading {subj[:40]}")
+    rct = h % 2 == 0
+    return {"program_matches": True, "method": "rct" if rct else "before_after",
+            "method_quote": ("Young people were randomly assigned to the program or a control group."
+                             if rct else "We compare baseline and endline surveys of participants."),
+            "outcome_type": "outcomes", "outcomes": ["employment", "earnings"],
+            "outcome_quote": "Employment rose among participants.",
+            "effect_summary": "Employment rose by a measured amount.", "sample": "1,000 young people",
+            "countries": ["Ghana"], "year": "2021", "evaluator": "An independent research group",
+            "independent": True, "peer_reviewed": False, "funders": ["A foundation"], "funder_quote": "Funded by a foundation.",
+            "cost_per_outcome": "not found", "cost_quote": "", "model_level": "E4" if rct else "E2"}
+
+
+def _funder(subj: str) -> dict[str, Any]:
+    name = subj.replace("Funder:", "").strip()
+    print(f"  funder   {name[:48]}")
+    url = "https://example.org/strategy"
+
+    def f(value, quote="The strategy says so."):
+        return {"value": value, "quote": quote, "url": url}
+    return {"strategy": {**f("Youth employment strategy"), "period": "2024-2030"},
+            "themes": f(["TVET at secondary level"]), "countries": f(["Ghana", "Kenya"]),
+            "instruments": f(["grants"]), "size": f("not found"), "eligibility": f("unclear"),
+            "calls": []}
+
+
 def mock_response(schema: dict[str, Any], user: str) -> dict[str, Any]:
+    recorded = replay.respond(schema, user)
+    if recorded is not None:
+        return recorded
     keys = set(schema.get("properties", {}).keys())
     subj = _subject(user)
     h = sum(ord(c) for c in user)
 
+    if "eligibility" in keys and "calls" in keys:
+        return _funder(subj)
+    if "evaluations" in keys:
+        return _find_evidence(subj, h)
+    if "method_quote" in keys:
+        return _read_evidence(subj, h)
     if "candidates" in keys:
         return _scout(subj, h)
     if "reports" in keys:
@@ -197,6 +279,8 @@ def mock_response(schema: dict[str, Any], user: str) -> dict[str, Any]:
         return _themes(user)
     if "memo_markdown" in keys:
         return _synth()
+    if "gaps" in keys:
+        return _gaps(user)
     if "patterns" in keys:
         return _hunches()
     return {}

@@ -44,14 +44,67 @@ OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.
 # When PROVIDER=openrouter this model runs the finding, reading, and web stages,
 # where a cheap model is enough. Set it, e.g. openai/gpt-4o-mini.
 OR_MODEL = os.environ.get("OR_MODEL", "")
+# A reasoning model spends its thinking inside the output budget, so a cap sized for an
+# answer alone stops it before it writes one. This floor is a ceiling on what the model
+# MAY use, not what it is billed for, so it is set generously.
+OR_MIN_OUTPUT = int(os.environ.get("OR_MIN_OUTPUT", "16000"))
 # The stronger model for the writing and judgment stages (scoring, auditing,
 # theming, and the memo), where prose quality and reasoning matter. It runs only on
 # stages that do NOT use the web plugin, since Claude underperforms through it, so
 # the cheap model keeps the search while this model writes. Empty means use OR_MODEL
 # for everything.
-OR_MODEL_STRONG = os.environ.get("OR_MODEL_STRONG", "anthropic/claude-sonnet-4")
+OR_MODEL_STRONG = os.environ.get("OR_MODEL_STRONG", "anthropic/claude-opus-5")
 OR_REFERER = os.environ.get("OR_REFERER", "https://acet-horizon-scan.local")
 OR_TITLE = os.environ.get("OR_TITLE", "ACET Horizon Scan")
+
+# Web search on OpenRouter is billed per request on top of tokens: about $4 per 1,000
+# results, and each request asks for WEB_MAX_USES results. Counted so spend is honest.
+WEB_CALL_USD = float(os.environ.get("WEB_CALL_USD", str(0.004 * int(os.environ.get("WEB_MAX_USES", "6")))))
+
+# A hard spend cap per run, in US dollars. 0 means no cap. When the priced spend reaches
+# it, further model calls raise BudgetExceeded, which the pipeline records as an error,
+# so the organizations not reached are scanned again on the next run.
+BUDGET_USD = float(os.environ.get("SCAN_BUDGET_USD", "0"))
+
+# Provider "claude-cli": every call runs through the local Claude Code command in
+# headless mode (claude -p), on the analyst's own Claude login, for runs on this
+# machine. A web app used by a team needs an API key instead.
+CLI_BIN = os.environ.get("CLAUDE_CLI_BIN", "claude")
+CLI_MODEL = os.environ.get("CLI_MODEL", "claude-opus-5")
+CLI_CONCURRENCY = int(os.environ.get("CLI_CONCURRENCY", "3"))
+
+# Which model runs which step, and at what effort. The heavy judgment steps run on the
+# strongest model, the reading steps on the middle one, and the short mechanical checks
+# on the fastest. A profile can override any row with its own "models" block.
+CLI_ROUTING: dict[str, dict[str, str]] = {
+    "evidence_find": {"model": "claude-opus-5", "effort": "high"},
+    "themer": {"model": "claude-opus-5", "effort": "high"},
+    "gaps": {"model": "claude-opus-5", "effort": "high"},
+    "synthesizer": {"model": "claude-opus-5", "effort": "high"},
+    "editor": {"model": "claude-opus-5", "effort": "high"},
+    # The reading steps stay on the strongest model: their quotes must match the source
+    # word for word, and on Sonnet 5 two randomized trials were paraphrased and capped
+    # at E2 (accuracy check, September 17, 2026, profiles/yes/eval/).
+    "reader": {"model": "claude-opus-5", "effort": "medium"},
+    "evidence_read": {"model": "claude-opus-5", "effort": "medium"},
+    "verifier": {"model": "claude-opus-5", "effort": "medium"},
+    "funder": {"model": "claude-sonnet-5", "effort": "medium"},
+    "corroborate": {"model": "claude-sonnet-5", "effort": "medium"},
+    "scout": {"model": "claude-sonnet-5", "effort": "low"},
+    "librarian": {"model": "claude-sonnet-5", "effort": "low"},
+    "discover": {"model": "claude-sonnet-5", "effort": "low"},
+    "scorer": {"model": "claude-haiku-4-5-20251001", "effort": "low"},
+    "auditor": {"model": "claude-haiku-4-5-20251001", "effort": "low"},
+    "hunches": {"model": "claude-haiku-4-5-20251001", "effort": "low"},
+    "frame_orgs": {"model": "claude-haiku-4-5-20251001", "effort": "low"},
+}
+# "one" sends every step to CLI_MODEL, which is how the pilot ran, for comparison.
+CLI_ROUTE_MODE = os.environ.get("CLI_ROUTE_MODE", "tiered")
+CLI_TIMEOUT = float(os.environ.get("CLI_TIMEOUT", "900"))
+# Steps that search need room to search, look, and search again. At 12 turns the
+# strongest model ran out mid-search on two golden programs, which read as "no
+# evaluation found" rather than as the limit it was.
+CLI_MAX_TURNS_WEB = int(os.environ.get("CLI_MAX_TURNS_WEB", "24"))
 
 # Concurrency for the per-org fan-out.
 MAX_CONCURRENCY = int(os.environ.get("MAX_CONCURRENCY", "8"))
@@ -61,6 +114,9 @@ MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "4"))
 
 # Dry run: mock every model call, no key or network needed. Set via env or CLI.
 DRY_RUN = os.environ.get("SCAN_DRY_RUN", "").lower() in ("1", "true", "yes")
+# In a dry run, replay a recorded run instead of the canned mocks (scan/replay.py).
+# The app turns this on with its test-mode box; tests and the command line leave it off.
+REPLAY = os.environ.get("SCAN_REPLAY", "").lower() in ("1", "true", "yes")
 
 # Ground the verifier: fetch the source and check the confirming quote is in it.
 GROUND_QUOTES = os.environ.get("GROUND_QUOTES", "1").lower() in ("1", "true", "yes")
@@ -84,8 +140,17 @@ PDF_MAX_PAGES = int(os.environ.get("PDF_MAX_PAGES", "80"))           # pages pul
 # with its cost left unstated, because a made-up price is worse than no price. Add
 # or override with SCAN_PRICES as JSON: {"model-id": [input, output]}.
 PRICES: dict[str, tuple[float, float]] = {
+    # US dollars per million tokens, input then output, as OpenRouter lists them.
+    # A model with no entry here runs with its cost uncounted, which also means the
+    # spend cap cannot see it, so add a model here when you point the app at it.
     "openai/gpt-4o-mini": (0.15, 0.60),
+    "openai/gpt-5-mini": (0.25, 2.00),
+    "openai/gpt-5-nano": (0.05, 0.40),
+    "openai/gpt-5": (1.25, 10.00),
     "anthropic/claude-sonnet-4": (3.00, 15.00),
+    "anthropic/claude-haiku-4.5": (1.00, 5.00),
+    "anthropic/claude-sonnet-5": (2.00, 10.00),
+    "anthropic/claude-opus-5": (5.00, 25.00),
 }
 try:
     import json as _json
@@ -113,9 +178,31 @@ def window_years() -> list[int]:
     return list(range(YEAR_MIN, YEAR_MAX + 1))
 
 
+def window(tier: str = "program") -> tuple[int, int]:
+    """The recency window for one source tier. A profile sets windows per tier
+    (spec["windows"]); the horizon scan has one window, YEAR_MIN to YEAR_MAX, for
+    everything."""
+    w = (active_spec().get("windows") or {}).get(tier)
+    return (int(w["from"]), int(w["to"])) if w else (YEAR_MIN, YEAR_MAX)
+
+
+def _tiered_window_rule(tiers: dict) -> str:
+    lines = ["# Standing hard rule, applies to every stage", "",
+             "Every source carries a recency window by its tier, and the window is a hard rule, "
+             "not a preference. Always record each source's publication or update date. A source "
+             "that cannot be dated to its window is set aside.", ""]
+    for key, t in tiers.items():
+        lines.append(f"- {t.get('label', key)}: published or updated from {t['from']} to {t['to']}."
+                     + (f" {t['note']}" if t.get("note") else ""))
+    return "\n".join(lines)
+
+
 def window_rule() -> str:
     """The canonical recency rule, injected verbatim into every agent's frame so
     all stages carry the identical hard rule. The years come only from here."""
+    tiers = active_spec().get("windows")
+    if tiers:
+        return _tiered_window_rule(tiers)
     ys = ", ".join(str(y) for y in window_years())
     return (f"# Standing hard rule, applies to every stage\n\n"
             f"The recency window is {YEAR_MIN} to {YEAR_MAX} ({ys}), and it is a hard rule, not a "
@@ -166,12 +253,14 @@ def load_context() -> dict[str, str]:
         "scope": _sm.scope_text(sp),
         "scoring": _sm.scoring_text(sp),
     }
-    if SCAN_MODE == "global":
+    horizon = _sm.profile_name(sp) == _sm.HORIZON
+    if SCAN_MODE == "global" and horizon:
         gp = CONTEXT_DIR / "mission_global.md"
         if gp.exists():
             ctx["mission"] = gp.read_text(encoding="utf-8")
+    cdir = CONTEXT_DIR if horizon or not sp.get("context_dir") else ROOT / sp["context_dir"]
     for name in ("themes", "output_spec", "policy", "exemplar"):
-        p = CONTEXT_DIR / f"{name}.md"
+        p = cdir / f"{name}.md"
         ctx[name] = p.read_text(encoding="utf-8") if p.exists() else ""
     return ctx
 
@@ -201,6 +290,11 @@ def anthropic_via_openrouter() -> bool:
 def require_key() -> None:
     if DRY_RUN:
         return
+    if PROVIDER == "claude-cli":
+        import shutil as _sh
+        if not _sh.which(CLI_BIN):
+            raise SystemExit(f"the {CLI_BIN!r} command is not on PATH (provider is claude-cli).")
+        return
     if PROVIDER == "openrouter":
         if not OPENROUTER_API_KEY:
             raise SystemExit("OPENROUTER_API_KEY is not set (provider is openrouter).")
@@ -211,3 +305,38 @@ def require_key() -> None:
         raise SystemExit(
             "ANTHROPIC_API_KEY is not set. Copy .env.example to .env and add your key."
         )
+
+
+# Bump this when a rule that decides a result changes: the evidence ladder and its
+# caps, the posture gates, the windows, the policy checks. Cached work carrying an
+# older number is scanned again rather than reused, so a saved run can never serve a
+# result graded under rules that no longer apply.
+RULES_VERSION = "2026-09-18"
+
+
+# --- scan profiles ---
+PROFILES_DIR = ROOT / "profiles"
+
+
+def use_profile(name: str | None) -> None:
+    """Point the engine at a scan profile. The horizon scan is the default and keeps
+    today's paths and spec. Any other profile loads profiles/<name>/profile.json, reads
+    its roster from profiles/<name>/organizations.xlsx, and writes every run file under
+    profiles/<name>/run/, so two scans never overwrite each other."""
+    global SPEC, WORK_DIR, ORGS_WORK, REVIEW_DIR, OUT_DIR, MANIFEST, ORG_SHEET
+    if not name or name == "horizon":
+        return
+    pdir = PROFILES_DIR / name
+    path = pdir / "profile.json"
+    if not path.exists():
+        raise SystemExit(f"no profile named {name!r} (looked for {path})")
+    import json as _json
+    SPEC = _json.loads(path.read_text(encoding="utf-8"))
+    SPEC["profile"] = name
+    base = pdir / "run"
+    WORK_DIR, REVIEW_DIR, OUT_DIR = base / "work", base / "review", base / "out"
+    ORGS_WORK = WORK_DIR / "orgs"
+    MANIFEST = WORK_DIR / "manifest.json"
+    ORG_SHEET = pdir / "organizations.xlsx"
+    for d in (ORGS_WORK, REVIEW_DIR, OUT_DIR):
+        d.mkdir(parents=True, exist_ok=True)

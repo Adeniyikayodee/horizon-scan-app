@@ -153,10 +153,11 @@ def write_orgs_list(orgs: list[dict], path: Path | None = None) -> Path:
     wb = Workbook()
     ws = wb.active
     ws.title = "organizations"
-    ws.append(["id", "name", "type", "region", "why", "source"])
+    web = any(o.get("website") for o in orgs)
+    ws.append(["id", "name", "type", "region", "why", "source"] + (["website"] if web else []))
     for i, o in enumerate(orgs, start=1):
         ws.append([f"O{i:03d}", o.get("name", ""), o.get("type", ""), o.get("region", ""),
-                   o.get("why", ""), o.get("source", "")])
+                   o.get("why", ""), o.get("source", "")] + ([o.get("website", "")] if web else []))
     _stamp(wb)
     wb.save(path)
     return path
@@ -188,19 +189,26 @@ def write_longlist(rows: list[dict[str, Any]]) -> Path:
     ws = wb.active
     ws.title = "longlist"
     crit = config.active_spec().get("criteria", [])
+    graded = bool(config.active_spec().get("evidence"))
     cols = (["rid", "keep", "org", "approach", "band", "what", "year"]
             + [c["name"] for c in crit]
-            + ["overall", "verification", "evidence check", "source"])
+            + ["overall", "verification", "evidence check", "source"]
+            + (["evidence level", "method sentence", "evaluation", "evidence flags"] if graded else []))
     ws.append(cols)
     for i, r in enumerate(rows, start=1):
         r.setdefault("rid", f"R{i:04d}")                 # stable id for the stage-2 rejoin
         s = r.get("score", {}) or {}
         v = r.get("verification", {}) or {}
-        row = [r["rid"], "Y", r.get("org", ""), r.get("name", ""), r.get("band", ""),
+        row = [r["rid"], r.get("keep_default", "Y"), r.get("org", ""), r.get("name", ""), r.get("band", ""),
                r.get("what", ""), r.get("year", "")]
         row += [s.get(c["key"], "") for c in crit]
         row += [s.get("overall", ""), v.get("status", ""),
                 guardrail.evidence_check(r), r.get("url", "")]
+        if graded:
+            rec = r.get("evidence_record") or {}
+            best = rec.get("best") or {}
+            row += [rec.get("label", ""), best.get("method_quote", ""), best.get("url", ""),
+                    "; ".join(rec.get("flags") or [])]
         ws.append(row)
     _stamp(wb)
     wb.save(path)
@@ -248,8 +256,41 @@ def read_kept_longlist() -> list[dict[str, Any]]:
         vstatus = str(d.get("verification", "") or "").strip()
         row["verification"] = {**(base.get("verification") or {}),
                                **({"status": vstatus} if vstatus else {})}
+        _apply_level_override(row, d.get("evidence level"))
         kept.append(row)
     return kept
+
+
+def _apply_level_override(row: dict[str, Any], cell: Any) -> None:
+    """A reviewer may change an evidence level in the longlist. Only a person can,
+    the change is kept on the record with what it replaced, and the posture it allows
+    is recomputed by the same gates the code uses."""
+    rec = row.get("evidence_record")
+    if not rec or cell in (None, ""):
+        return
+    from . import ladder
+    new = ladder.parse_level(cell)
+    if not str(cell).strip().upper().startswith("E") or new == rec.get("level"):
+        return
+    gates = (config.active_spec().get("evidence") or {}).get("gates") or {}
+    rec["override"] = {"from": rec.get("label", ""), "to": ladder.label(new), "by": "review"}
+    rec["level"], rec["label"] = new, ladder.label(new)
+    rec["posture_allowed"] = ladder.best_posture(new, rec.get("replicated_in_africa", False), gates)
+
+
+def write_evidence_overrides(rows: list[dict[str, Any]]) -> Path | None:
+    """Every evidence level a reviewer changed, so the change is on the record."""
+    path = config.REVIEW_DIR / "evidence_overrides.md"
+    changed = [r for r in rows if (r.get("evidence_record") or {}).get("override")]
+    if not changed:
+        path.unlink(missing_ok=True)
+        return None
+    lines = ["# Evidence levels changed at review\n"]
+    for r in changed:
+        o = r["evidence_record"]["override"]
+        lines.append(f"- {r.get('org','')}: {r.get('name','')}, {o['from']} to {o['to']}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
 
 
 def write_open_questions(rows: list[dict[str, Any]], dropped: list[dict[str, Any]]) -> Path:
@@ -272,7 +313,7 @@ def write_open_questions(rows: list[dict[str, Any]], dropped: list[dict[str, Any
     return path
 
 
-def write_theme_screen(themes: list[dict[str, Any]]) -> Path:
+def write_theme_screen(themes: list[dict[str, Any]], unplaced: list[dict[str, Any]] | None = None) -> Path:
     """What the existing-portfolio screen did, so the analyst can see and argue with
     it. A theme held back here is not a failure of the scan, it is the scan refusing
     to recommend work the institute already runs. Edit the spec's excluded_areas to
@@ -280,13 +321,24 @@ def write_theme_screen(themes: list[dict[str, Any]]) -> Path:
     path = config.REVIEW_DIR / "theme_screen.md"
     held = [t for t in themes if t.get("screened")]
     near = [t for t in themes if t.get("screen_note") and not t.get("screened")]
-    lines = ["# Existing-portfolio screen\n",
-             f"{len(held)} theme(s) held back to existing work, {len(near)} near the line.\n",
-             "## Held back to existing work, posture deepen\n"]
-    lines += [f"- {t.get('name','')}: {t['screened']}" for t in held] or ["- none"]
-    lines += ["\n## Near the line, left as the model tagged them\n"]
-    lines += [f"- {t.get('name','')} [{t.get('tag','')}, {t.get('posture','')}]: {t['screen_note']}"
-              for t in near] or ["- none"]
+    if config.active_spec().get("portfolio_mode") == "baseline":
+        lines = ["# Theme screen\n",
+                 "The theme list is fixed by the profile. Postures lowered by the evidence gates:\n"]
+        lines += [f"- {t.get('name','')}: {t['posture_note']}" for t in themes if t.get("posture_note")] or ["- none"]
+    else:
+        lines = ["# Existing-portfolio screen\n",
+                 f"{len(held)} theme(s) held back to existing work, {len(near)} near the line.\n",
+                 "## Held back to existing work, posture deepen\n"]
+        lines += [f"- {t.get('name','')}: {t['screened']}" for t in held] or ["- none"]
+        lines += ["\n## Near the line, left as the model tagged them\n"]
+        lines += [f"- {t.get('name','')} [{t.get('tag','')}, {t.get('posture','')}]: {t['screen_note']}"
+                  for t in near] or ["- none"]
+    if unplaced:
+        lines += ["\n## Outside the fixed theme list, not placed\n",
+                  "The model proposed these themes outside the profile's list and they did not "
+                  "meet the bar for an extra theme. Their options need a home at review.\n"]
+        lines += [f"- {u.get('name','')}: {', '.join(u.get('members') or []) or 'no members'}"
+                  for u in unplaced]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
@@ -381,3 +433,121 @@ def write_memo(markdown: str) -> Path:
     path = config.OUT_DIR / "synthesis_memo.md"
     path.write_text(markdown.rstrip() + "\n", encoding="utf-8")
     return path
+
+
+# --- a profile's options workbook ------------------------------------------------
+OPTION_COLUMNS = [
+    "Theme", "Option", "Organization", "Design", "Level of view", "Target group", "Where it runs",
+    "Delivery partner", "Evidence level", "Evaluation", "Evaluation link", "Evaluation year",
+    "Outcome and effect", "Cost per outcome", "Inclusion reach", "Transfer note", "ACET's role",
+    "Open questions", "Funders", "Posture", "Relation", "Verification", "Program source",
+]
+FUNDER_COLUMNS = [
+    "Funder", "Type", "Why it is here", "Fit score", "Themes matched", "Priority countries matched",
+    "Strategy", "Strategy period", "Instruments", "Typical size", "ACET eligible", "Open calls",
+    "Strategy source", "Not confirmed",
+]
+
+
+def _cell(v: Any) -> Any:
+    if isinstance(v, (list, tuple)):
+        v = "; ".join(str(x) for x in v if str(x).strip())
+    return "" if v is None else v
+
+
+GAP_COLUMNS = [
+    "Research gap", "Theme", "Rests on", "Quoted line", "Source", "What is already known",
+    "Countries covered", "Countries with nothing", "Not yet answered for",
+    "What it would take", "Who is closest", "Checked",
+]
+
+
+def write_options(rows: list[dict[str, Any]], themes: list[dict[str, Any]], funder_map: list[dict[str, Any]],
+                  path: Path, gaps: list[dict[str, Any]] | None = None,
+                  coverage_columns: list[str] | None = None,
+                  coverage_rows: list[list[Any]] | None = None) -> tuple[Path, list[str]]:
+    """The program design options list and the funder map, one workbook. Every text
+    cell goes through the same scrub as the brief, and anything the scrub cannot fix
+    is returned for the policy notes."""
+    member_theme = {m: t for t in themes for m in t.get("members", [])}
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Options"
+    ws.append(OPTION_COLUMNS)
+    order = {"adopt": 0, "adapt": 1, "watch": 2}
+    hits: list[str] = []
+
+    def clean(values: list[Any]) -> list[Any]:
+        out = []
+        for v in values:
+            v = _cell(v)
+            if isinstance(v, str):
+                v, h = guardrail.finalize("cell", v)
+                hits.extend(h)
+            out.append(v)
+        return out
+
+    def key(r):
+        t = member_theme.get(r.get("name", ""), {})
+        rec = r.get("evidence_record") or {}
+        return (t.get("name", "~"), order.get(r.get("posture", ""), 3), -int(rec.get("level", 1)), r.get("name", ""))
+
+    for r in sorted(rows, key=key):
+        t = member_theme.get(r.get("name", ""), {})
+        rec = r.get("evidence_record") or {}
+        best = rec.get("best") or {}
+        s = r.get("score") or {}
+        cost = best.get("cost_per_outcome") or ""
+        if not cost or cost == "not found":
+            cost = r.get("cost_data") or "not found"
+        ws.append(clean([
+            t.get("name", ""), r.get("name", ""), r.get("org", ""), r.get("design_features") or r.get("what", ""),
+            r.get("level_of_view", ""), r.get("target_group", ""), r.get("countries", ""),
+            r.get("delivery_partner", ""),
+            rec.get("label", ""), best.get("title", "") or rec.get("note", ""), best.get("url", ""),
+            best.get("year", ""), best.get("effect_summary", ""), cost,
+            r.get("inclusion") or s.get("reason_inclusion", ""), s.get("reason_transferability", ""),
+            s.get("reason_acet_role", ""), r.get("open_questions", ""),
+            list(dict.fromkeys((rec.get("funders") or []) + [x.strip() for x in str(r.get("funders", "")).split(";") if x.strip()])),
+            r.get("posture", ""), t.get("tag", ""), (r.get("verification") or {}).get("status", ""), r.get("url", ""),
+        ]))
+
+    if gaps:
+        gs = wb.create_sheet("Research gaps")
+        gs.append(GAP_COLUMNS)
+        for g in gaps:
+            gs.append(clean([
+                g.get("question", ""), g.get("theme", ""),
+                "a source says so" if g.get("basis") == "stated" else "the coverage map",
+                g.get("quote", ""), g.get("source", ""), g.get("what_is_known", ""),
+                g.get("countries_covered", []), g.get("countries_missing", []),
+                g.get("inclusion_gap", ""), g.get("what_it_would_take", ""), g.get("who_is_closest", ""),
+                "checked against the material" if g.get("grounded") else g.get("ground_note", "not checked"),
+            ]))
+    if coverage_columns and coverage_rows is not None:
+        cs = wb.create_sheet("Coverage map")
+        cs.append(coverage_columns)
+        for r in coverage_rows:
+            cs.append(clean(list(r)))
+    fs = wb.create_sheet("Funder map")
+    fs.append(FUNDER_COLUMNS)
+    for f in funder_map:
+        if f.get("error"):
+            fs.append(clean([f.get("name", ""), f.get("type", ""), f.get("source", ""), "", "", "", "", "",
+                             "", "", "", "", "", "could not be read"]))
+            continue
+        fit = f.get("fit") or {}
+        st = f.get("strategy") or {}
+        calls = [", ".join(x for x in (c.get("title", ""), c.get("deadline", ""), c.get("url", "")) if x)
+                 for c in f.get("calls") or []]
+        fs.append(clean([
+            f.get("name", ""), f.get("type", ""), f.get("source", ""), fit.get("score", ""),
+            fit.get("themes_matched", []), fit.get("countries_matched", []), st.get("value", ""),
+            st.get("period", "") if st.get("grounded") is True else "",
+            (f.get("instruments") or {}).get("value", []), (f.get("size") or {}).get("value", ""),
+            (f.get("eligibility") or {}).get("value", ""), calls, st.get("url", "") if st.get("grounded") is True else "",
+            f.get("dropped_fields", []),
+        ]))
+    _stamp(wb)
+    wb.save(path)
+    return path, list(dict.fromkeys(hits))

@@ -211,10 +211,18 @@ def scoring_text(spec: dict) -> str:
               "Give a one-line reason for every mark, drawn only from the evidence. Resolve the marks "
               "into an overall fit, high, medium, or low, leaning on the weighted criteria.",
               "",
-              "Posture (themes only): enter, watch, or deepen. Enter marks a new or adjacent area worth "
-              "entering or piloting now, watch marks one to monitor and revisit, and deepen marks existing "
-              "work to keep current. Every existing theme is deepen; no existing theme may carry enter."]
+              spec_posture_text(spec)]
     return "\n".join(lines)
+
+
+_HORIZON_POSTURE_TEXT = (
+    "Posture (themes only): enter, watch, or deepen. Enter marks a new or adjacent area worth "
+    "entering or piloting now, watch marks one to monitor and revisit, and deepen marks existing "
+    "work to keep current. Every existing theme is deepen; no existing theme may carry enter.")
+
+
+def spec_posture_text(spec: dict) -> str:
+    return spec.get("posture_text") or _HORIZON_POSTURE_TEXT
 
 
 def excluded_areas(spec: dict) -> list[dict]:
@@ -239,6 +247,8 @@ def excluded_text(spec: dict) -> str:
 
 
 def scope_text(spec: dict) -> str:
+    if portfolio_mode(spec) == "baseline":
+        return spec.get("context", "") + (("\n\n" + spec["portfolio_text"]) if spec.get("portfolio_text") else "")
     return spec.get("context", "") + "\n\n" + excluded_text(spec)
 
 
@@ -297,6 +307,8 @@ def screen_existing(themes: list[dict], spec: dict) -> list[dict]:
     genuinely new theme. A single body hit is recorded as a near miss instead, for
     the analyst to look at.
     """
+    if portfolio_mode(spec) != "exclude":
+        return themes
     for t in themes:
         name = _norm_text(t.get("name", ""))
         body = _norm_text(t.get("name", ""), t.get("rationale", ""), t.get("marquee", ""),
@@ -359,6 +371,9 @@ def memo_shortfall(markdown: str, spec: dict) -> str:
     problems = []
     if words < floor:
         problems.append(f"{words:,} words against a floor of {floor:,}")
+    ceiling = m.get("max_words")
+    if ceiling and words > int(ceiling):
+        problems.append(f"{words:,} words against a ceiling of {int(ceiling):,}")
     if missing:
         problems.append("missing section(s): " + ", ".join(missing))
     return "; ".join(problems)
@@ -395,8 +410,8 @@ def score_schema(spec: dict) -> dict:
 def themes_schema(spec: dict) -> dict:
     tprops = {
         "name": {"type": "string"},
-        "tag": {"type": "string", "enum": ["existing", "adjacent", "new"]},
-        "posture": {"type": "string", "enum": ["enter", "watch", "deepen"]},
+        "tag": {"type": "string", "enum": tags(spec)},
+        "posture": {"type": "string", "enum": postures(spec)},
         "rationale": {"type": "string"},
         "marquee": {"type": "string", "description": "One leading approach."},
         "members": {"type": "array", "items": {"type": "string"}},
@@ -452,6 +467,8 @@ def coerce_score(out: dict, spec: dict) -> tuple[dict, list[str]]:
 
 
 def coerce_theme(t: dict, spec: dict) -> dict:
+    if spec.get("postures") or spec.get("tags"):
+        return _coerce_theme_profile(t, spec)
     t = dict(t)
     tag = str(t.get("tag", "")).lower().strip()
     posture = str(t.get("posture", "")).lower().strip()
@@ -473,6 +490,28 @@ def coerce_theme(t: dict, spec: dict) -> dict:
     return t
 
 
+def _coerce_theme_profile(t: dict, spec: dict) -> dict:
+    """coerce_theme for a profile that sets its own postures and tags. An off-list
+    value falls to the profile's stated fallback (the most cautious posture and tag),
+    never to a promoting one."""
+    t = dict(t)
+    ps, ts = postures(spec), tags(spec)
+    fb = spec.get("fallback") or {}
+    tag = str(t.get("tag", "")).lower().strip()
+    posture = str(t.get("posture", "")).lower().strip()
+    if tag in ps and posture in ts:
+        tag, posture = posture, tag
+    t["tag"] = tag if tag in ts else fb.get("tag", ts[-1])
+    t["posture"] = posture if posture in ps else fb.get("posture", ps[-1])
+    for c in criteria(spec):
+        t[c["key"]] = _enum(t.get(c["key"]), _MARKS, "partial")
+    if not isinstance(t.get("members"), list):
+        t["members"] = []
+    for k, d in (("rationale", ""), ("marquee", ""), ("name", "Untitled theme"), ("top2", False)):
+        t.setdefault(k, d)
+    return t
+
+
 # --- persistence per run ---
 def save_spec(spec: dict, path) -> None:
     Path(path).write_text(json.dumps(spec, indent=2), encoding="utf-8")
@@ -481,3 +520,139 @@ def save_spec(spec: dict, path) -> None:
 def load_spec(path) -> dict:
     p = Path(path)
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else dict(DEFAULT_SPEC)
+
+
+# --- scan profiles: the scan-specific rules as data ---------------------------
+# Every accessor below returns TODAY's horizon behavior when the spec does not set
+# the key, and DEFAULT_SPEC deliberately does not set them. So the horizon scan's
+# saved spec, prompts, and outputs stay exactly as they were (tests/snapshots), and
+# a profile such as profiles/yes/profile.json changes the scan by setting keys, never
+# by editing code.
+HORIZON = "horizon"
+_HORIZON_POSTURES = ["enter", "watch", "deepen"]
+_HORIZON_TAGS = ["existing", "adjacent", "new"]
+_HORIZON_LEAD = {"count": 2, "postures": ["enter"], "tags": ["new", "adjacent"]}
+
+
+def profile_name(sp: dict) -> str:
+    return sp.get("profile") or HORIZON
+
+
+def prompt(sp: dict, name: str, default: str) -> str:
+    """An agent's instructions: the profile's version when it sets one, else the
+    horizon text kept in agents.py."""
+    return (sp.get("prompts") or {}).get(name) or default
+
+
+def themes_seed_names(sp: dict) -> list[str]:
+    return [t.get("name", "") for t in sp.get("themes_seed") or []]
+
+
+def postures(sp: dict) -> list[str]:
+    return list(sp.get("postures") or _HORIZON_POSTURES)
+
+
+def tags(sp: dict) -> list[str]:
+    return list(sp.get("tags") or _HORIZON_TAGS)
+
+
+def portfolio_mode(sp: dict) -> str:
+    """exclude: themes in the existing portfolio are screened to existing/deepen
+    (horizon). baseline: the portfolio is the starting point, nothing is screened."""
+    return sp.get("portfolio_mode") or "exclude"
+
+
+def drop_bands(sp: dict) -> list[str]:
+    """Reading bands dropped before scoring. Horizon drops maturing approaches, a
+    profile looking for proven designs sets this to []."""
+    v = sp.get("drop_bands")
+    return ["maturing"] if v is None else list(v)
+
+
+def lead_rule(sp: dict) -> dict:
+    """Which themes the memo leads with: how many, from which postures and tags."""
+    return {**_HORIZON_LEAD, **(sp.get("lead") or {})}
+
+
+# --- a fixed theme list, enforced in code -------------------------------------
+def _theme_key(name: str) -> str:
+    return " ".join(_WORD.findall(str(name or "").lower()))
+
+
+def enforce_theme_seed(themes: list[dict], sp: dict) -> tuple[list[dict], list[dict]]:
+    """Hold the Themer to the profile's theme list (spec["themes_seed"]).
+
+    A theme whose name matches a seed theme takes the seed's exact name and its
+    relation as the tag, so the model cannot relabel a current area as new. Two
+    themes that land on the same seed are merged. A theme outside the list survives
+    only as one of at most `max_extra_themes`, and only with at least
+    `extra_min_members` members, tagged new; the rest are returned as unplaced for
+    the reviewer. Without a seed list, themes pass through untouched."""
+    seed = sp.get("themes_seed")
+    if not seed:
+        return themes, []
+    by_key = {_theme_key(s["name"]): s for s in seed}
+    placed: dict[str, dict] = {}
+    extras: list[dict] = []
+    for t in themes:
+        s = by_key.get(_theme_key(t.get("name", "")))
+        if not s:
+            extras.append(t)
+            continue
+        if s["name"] in placed:
+            keep = placed[s["name"]]
+            keep["members"] = list(dict.fromkeys((keep.get("members") or []) + (t.get("members") or [])))
+            continue
+        t = dict(t)
+        t["name"], t["tag"] = s["name"], s["relation"]
+        placed[s["name"]] = t
+    max_extra = int(sp.get("max_extra_themes", 0))
+    floor = int(sp.get("extra_min_members", 3))
+    ok = sorted([e for e in extras if len(e.get("members") or []) >= floor],
+                key=lambda e: len(e.get("members") or []), reverse=True)[:max_extra]
+    kept_extra = []
+    for e in ok:
+        e = dict(e)
+        e["tag"] = sp.get("extra_theme_tag", "new")
+        kept_extra.append(e)
+    unplaced = [e for e in extras if all(e is not k and e.get("name") != k.get("name") for k in kept_extra)]
+    ordered = [placed[s["name"]] for s in seed if s["name"] in placed]
+    return ordered + kept_extra, unplaced
+
+
+# --- extra fields the Reader records for a profile ------------------------------
+def reader_fields(sp: dict) -> dict[str, str]:
+    return dict(sp.get("reader_fields") or {})
+
+
+def reader_schema(sp: dict, base: dict) -> dict:
+    """The Reader's schema: the base schema, plus the profile's extra string fields.
+    Returns the base object itself when the profile adds none, so the horizon scan
+    sends exactly the schema it always has."""
+    extra = reader_fields(sp)
+    if not extra:
+        return base
+    import copy
+    sch = copy.deepcopy(base)
+    for k, desc in extra.items():
+        sch["properties"][k] = {"type": "string", "description": desc}
+        sch["required"].append(k)
+    return sch
+
+
+def evidence_config(sp: dict) -> dict | None:
+    return sp.get("evidence") or None
+
+
+def funder_config(sp: dict) -> dict | None:
+    """The funder scan's settings, with the theme names taken from the theme list so
+    the two cannot disagree."""
+    cfg = sp.get("funders")
+    if not cfg:
+        return None
+    return {**cfg, "theme_names": [t["name"] for t in sp.get("themes_seed") or []]}
+
+
+def cli_models(sp: dict) -> dict[str, dict[str, str]]:
+    """A profile's per-step model routing, which overrides the engine's table."""
+    return dict(sp.get("models") or {})

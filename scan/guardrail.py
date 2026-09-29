@@ -116,7 +116,8 @@ def scan_text(text: str) -> list[str]:
     hits: list[str] = []
     low = text.lower()
     for b in BANNED_IDENT:
-        if b in low:
+        # whole words only, so "Wellspring Philanthropic Fund" never reads as a tool name
+        if re.search(rf"(?<![a-z0-9]){re.escape(b)}(?![a-z0-9])", low):
             hits.append(f"banned token: {b}")
     for pat in BANNED_PHRASE + BANNED_MODEL:
         m = re.search(pat, low)

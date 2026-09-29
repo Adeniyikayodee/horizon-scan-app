@@ -12,12 +12,14 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import uuid
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
 
-from scan import agents, client, config, guardrail, io_xlsx, pdf_out, pipeline, sources, spec
+from scan import agents, client, config, guardrail, io_xlsx, pdf_out, pipeline, replay, sources, spec
 
 
 def _secret(key: str, default: str = "") -> str:
@@ -130,10 +132,20 @@ COMPASS = ('<svg width="30" height="30" viewBox="0 0 40 40" fill="none">'
            '<path d="M5 20 L20 17 L35 20 L20 23 Z" fill="#12605A" opacity=".35"/></svg>')
 
 
-# The one model the app runs on: reliable and cheap on OpenRouter's web plugin.
-# If you add an ANTHROPIC_API_KEY, set this to "anthropic/claude-opus-4.8" and it
-# auto-routes to the native Anthropic path (best quality).
-DEFAULT_MODEL = "openai/gpt-4o-mini"
+# What Model 2 runs on. The searching steps use the cheaper model, since their job is
+# to find pages, and the reading, judging, and writing steps use the strong one, since
+# their quotes are checked against the source word for word. Either can be overridden in
+# the server's secrets. Keep the searching model off the anthropic/ prefix: with an
+# ANTHROPIC_API_KEY also on the server, that prefix routes to the Anthropic account
+# instead, and Model 2 would quietly spend the wrong balance.
+DEFAULT_MODEL = _secret("OR_MODEL", "openai/gpt-5-mini")
+DEFAULT_MODEL_STRONG = _secret("OR_MODEL_STRONG", "anthropic/claude-opus-5")
+# A spend cap for Model 2, in US dollars, 0 for none. On a shared link this is the
+# difference between a team trying the tool and a team emptying the balance.
+BUDGET_USD = float(_secret("SCAN_BUDGET_USD", "0") or 0)
+# Model 1 runs the local Claude Code command, which exists on the analyst's machine and
+# not on a server, so the choice is only offered where it can actually run.
+CLI_READY = bool(shutil.which(config.CLI_BIN))
 
 
 def masthead() -> None:
@@ -537,10 +549,74 @@ def run_async(coro):
     return asyncio.new_event_loop().run_until_complete(coro)
 
 
-# --- session setup ---
+SCAN_LABELS = {None: "Horizon scan", "yes": "YES program scan"}
+
+
+def saved_runs() -> list[dict]:
+    """Every run saved on this computer, newest first, with enough to recognise it."""
+    root = config.ROOT / "runs"
+    out = []
+    for d in sorted([p for p in root.glob("*") if p.is_dir()], key=lambda p: p.stat().st_mtime, reverse=True):
+        spec_path = d / "work" / "spec.json"
+        profile = None
+        if spec_path.exists():
+            try:
+                profile = json.loads(spec_path.read_text()).get("profile")
+            except Exception:
+                profile = None
+        orgs = 0
+        sheet = d / "input" / "organizations.xlsx"
+        if sheet.exists():
+            try:
+                orgs = len(io_xlsx.read_orgs(sheet))
+            except Exception:
+                orgs = 0
+        done = bool(list((d / "out").glob("*.docx")) or list((d / "out").glob("*.xlsx")))
+        out.append({"id": d.name, "profile": profile, "orgs": orgs, "done": done,
+                    "when": datetime.fromtimestamp(d.stat().st_mtime).strftime("%B %-d, %-I:%M %p")})
+    return out
+
+
+def pick_up_where_it_stopped() -> None:
+    """Rebuild the page from the files on disk. A refresh, a closed laptop, or a new
+    day lands back on the step the run had reached, since the work is saved as it goes."""
+    ss = st.session_state
+    spec_path = config.WORK_DIR / "spec.json"
+    if spec_path.exists() and "spec" not in ss:
+        try:
+            saved = json.loads(spec_path.read_text())
+            ss.spec = saved
+            ss.scan_pick = SCAN_LABELS.get(saved.get("profile"), "Horizon scan")
+            ss.scan_loaded = ss.scan_pick
+        except Exception:
+            pass
+    if config.ORG_SHEET.exists():
+        try:
+            ss.roster = io_xlsx.read_orgs()
+            ss.n_orgs = len(ss.roster)
+        except Exception:
+            pass
+    longlist = config.REVIEW_DIR / "longlist.xlsx"
+    if longlist.exists():
+        try:
+            df = pd.read_excel(longlist)
+            ss.n_rows = len(df)
+            ss.n_verified = int((df["verification"] == "verified").sum())
+        except Exception:
+            pass
+    finished = [p for p in config.OUT_DIR.glob("*") if p.suffix in (".docx", ".xlsx", ".md")]
+    ss.step = 4 if finished else 3 if longlist.exists() else 2 if ss.get("n_orgs") else 1
+    if finished:
+        ss.generated = True
+
+
+# --- session setup: the run id lives in the page address, so a refresh keeps the run ---
 if "run_id" not in st.session_state:
-    st.session_state.run_id = uuid.uuid4().hex[:10]
+    st.session_state.run_id = st.query_params.get("run") or uuid.uuid4().hex[:10]
     st.session_state.step = 1
+    apply_run_dir(st.session_state.run_id)
+    pick_up_where_it_stopped()
+st.query_params["run"] = st.session_state.run_id
 apply_run_dir(st.session_state.run_id)
 
 if not gate():
@@ -551,8 +627,50 @@ with st.sidebar:
     st.markdown('<div class="hs-eyebrow" style="margin-top:2px">Progress</div>', unsafe_allow_html=True)
     stepper(st.session_state.step)
     st.markdown('<div style="height:1px;background:var(--line);margin:14px 0"></div>', unsafe_allow_html=True)
-    config.PROVIDER = "openrouter"
+    ENGINES = {"Model 1": "claude-cli", "Model 2": "openrouter"} if CLI_READY else {"Model 2": "openrouter"}
+    engine = st.radio("Engine", list(ENGINES), key="engine_pick",
+                      help="Model 1 runs on this computer only. Model 2 uses the online account and its balance.")
+    config.PROVIDER = ENGINES[engine]
     config.OR_MODEL = DEFAULT_MODEL
+    config.OR_MODEL_STRONG = DEFAULT_MODEL_STRONG
+    config.BUDGET_USD = BUDGET_USD
+    if not CLI_READY:
+        st.caption("Model 1 needs the Claude app on the computer running this page, so it is not "
+                   "offered here. Model 2 runs on the online account.")
+    if BUDGET_USD:
+        st.caption(f"Model 2 stops this run at ${BUDGET_USD:,.0f} of spend.")
+    SCANS = {"Horizon scan": None, "YES program scan": "yes"}
+    picked = st.selectbox("Scan", list(SCANS), key="scan_pick",
+                          help="Horizon scan: new areas for the Hub to enter. YES program scan: proven "
+                               "program designs for youth employment and skills, graded on their evidence, "
+                               "with a funder scan.")
+    config.DRY_RUN = st.checkbox("Test mode, no cost", value=False,
+                                 help="Runs the whole flow with no model calls and no charge. The YES scan "
+                                      "replays a recorded run, with its real sources, quotes, and grades; "
+                                      "the horizon scan uses sample data.")
+    config.REPLAY = config.DRY_RUN
+    # the YES scan in test mode replays a recorded run, so its roster is the recorded one;
+    # a run already past step one keeps the roster it was started with
+    demo = bool(config.DRY_RUN and SCANS[picked] == replay.PROFILE and replay.available())
+    if (st.session_state.get("scan_loaded") != picked
+            or (st.session_state.get("step", 1) == 1 and st.session_state.get("roster_demo", False) != demo)):
+        st.session_state.scan_loaded = picked
+        st.session_state.roster_demo = demo
+        name = SCANS[picked]
+        if name:
+            pdir = config.PROFILES_DIR / name
+            prof = replay.spec_of_the_run() if demo else json.loads(
+                (pdir / "profile.json").read_text(encoding="utf-8"))
+            prof["profile"] = name
+            st.session_state.spec = prof
+            orgs = ([{**o, "source": "recorded run"} for o in replay.orgs()] if demo else
+                    [{**o, "source": "profile"} for o in io_xlsx.read_orgs(pdir / "organizations.xlsx")])
+            st.session_state.roster = io_xlsx.merge_orgs(orgs, [])
+        else:
+            st.session_state.spec = json.loads(json.dumps(spec.DEFAULT_SPEC))
+            st.session_state.roster = []
+        st.session_state.step = 1
+        st.session_state.pop("generated", None)
     scope = st.radio(
         "Scope", ["Africa focus", "Global"], horizontal=True,
         help="Africa focus: search each organization's Africa work and judge it for Africa, the "
@@ -560,10 +678,36 @@ with st.sidebar:
              "any actor (civil society, foundations, and the private sector too), noting for each how "
              "it could transfer to an African context.")
     config.SCAN_MODE = "global" if scope == "Global" else "africa"
-    if not config.OPENROUTER_API_KEY:
-        st.error("No API key on the server. Add OPENROUTER_API_KEY to .streamlit/secrets.toml.")
+    if config.PROVIDER == "openrouter" and not config.OPENROUTER_API_KEY:
+        st.error("Model 2 has no key on this server. Add it to .streamlit/secrets.toml.")
+    elif config.PROVIDER == "openrouter" and not config.DRY_RUN:
+        if "or_credit" not in st.session_state:
+            st.session_state.or_credit = client.openrouter_credit()
+        left = st.session_state.or_credit
+        if left is None:
+            st.caption("Model 2 balance could not be read.")
+        elif left < 5:
+            st.error(f"Model 2 has about ${left:,.2f} left on the account. Top it up before running, "
+                     "since without it the searching steps come back empty and the scan looks like "
+                     "it found nothing.")
+        else:
+            st.caption(f"Model 2 balance: about ${left:,.2f}.")
+    runs = [r for r in saved_runs() if r["id"] != st.session_state.run_id]
+    if runs:
+        labels = {f"{SCAN_LABELS.get(r['profile'], 'Horizon scan')}, {r['orgs']} organizations, "
+                  f"{r['when']}{', finished' if r['done'] else ''}": r["id"] for r in runs[:12]}
+        pick = st.selectbox("Open a saved run", ["This run"] + list(labels))
+        if pick != "This run":
+            st.query_params["run"] = labels[pick]
+            for k in ("run_id", "step", "generated", "spec", "roster", "scan_loaded", "n_orgs", "n_rows",
+                      "n_verified"):
+                st.session_state.pop(k, None)
+            st.rerun()
+    st.caption(f"This run is saved as {st.session_state.run_id}. Keep the page address to come back to it.")
     if st.button("Start over"):
-        for k in ("run_id", "step", "generated"):
+        st.query_params.clear()
+        for k in ("run_id", "step", "generated", "spec", "roster", "scan_loaded", "n_orgs", "n_rows",
+                  "n_verified"):
             st.session_state.pop(k, None)
         st.rerun()
 
@@ -589,11 +733,13 @@ with st.expander("Frame the scan  ·  research question, criteria, context", exp
                                  value=sp.get("context", ""), height=140)
     if st.button("Save frame"):
         crit = []
+        known_keys = {c.get("name", ""): c.get("key", "") for c in sp.get("criteria", [])}
         for _, row in edited_crit.iterrows():
             name = str(row.get("name", "") or "").strip()
             if not name:
                 continue
-            key = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or f"c{len(crit)}"
+            # keep a criterion's key while its name is unchanged, since profiles rely on it
+            key = known_keys.get(name) or re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or f"c{len(crit)}"
             try:
                 w = int(row.get("weight", 1))
             except Exception:
@@ -652,15 +798,16 @@ if roster:
     tally = ", ".join(f"{n} {s}" for s, n in counts.items() if s)
     st.caption(f"{len(roster)} organizations in the roster ({tally}). Edit, remove, or add rows, then use it.")
     rdf = pd.DataFrame(roster)
-    for col in ("name", "type", "region", "why", "source"):
+    for col in ("name", "type", "region", "why", "source", "website"):
         if col not in rdf.columns:
             rdf[col] = ""
-    edited_orgs = st.data_editor(rdf[["name", "type", "region", "why", "source"]], num_rows="dynamic",
+    edited_orgs = st.data_editor(rdf[["name", "type", "region", "website", "why", "source"]], num_rows="dynamic",
                                  use_container_width=True, hide_index=True, key="roster_editor")
     cc1, cc2 = st.columns([1, 3])
     if cc1.button("Use this roster", type="primary"):
         rows = [{"name": str(r.get("name", "") or "").strip(), "type": str(r.get("type", "") or ""),
                  "region": str(r.get("region", "") or ""), "why": str(r.get("why", "") or ""),
+                 "website": str(r.get("website", "") or ""),
                  "source": str(r.get("source", "") or "").strip() or "analyst"}
                 for _, r in edited_orgs.iterrows() if str(r.get("name", "") or "").strip()]
         rows = io_xlsx.merge_orgs(rows, [])          # final de-dup and contiguous ids
@@ -718,15 +865,20 @@ if step >= 2:
 # --- scan summary: tiles + explorable evidence per organization ---
 if step >= 3:
     if st.session_state.get("n_rows", 0) == 0:
-        errmsg = ""
+        errs = []
         if config.MANIFEST.exists():
             m = json.loads(config.MANIFEST.read_text())
             errs = [v.get("error") for v in m.values() if v.get("error")]
-            errmsg = errs[0] if errs else ""
-        if errmsg:
-            st.error("This run failed, every organization errored. First error: " + errmsg[:220]
-                     + "  —  If it mentions credits, even a free model's web search needs a small "
-                       "OpenRouter balance; the free tier covers the model, not the web access.")
+        # candidates that errored are recorded as drops with stage "error", not as model drops
+        errs += [d.get("error") or d.get("reason", "") for p in read_payloads()
+                 for d in p.get("dropped", []) if d.get("stage") == "error"]
+        if errs:
+            credit = any("402" in e or "credit" in e.lower() for e in errs)
+            st.error(f"This run did not finish: {len(errs)} call(s) failed. "
+                     + ("The Model 2 account ran out of credit. Add credit, or switch the engine in the sidebar "
+                        "to Model 1, then run again. Organizations that errored are scanned again. "
+                        if credit else "Run again, and organizations that errored are scanned again. ")
+                     + "First error: " + errs[0][:200])
         else:
             st.warning("This run returned no usable approaches, the model dropped every candidate at the "
                        "reading stage. That is usually the model over-dropping, not an error. Pick a steadier "
@@ -814,9 +966,22 @@ if step >= 3:
                             column_config={"keep": st.column_config.CheckboxColumn("keep"),
                                            "rid": st.column_config.TextColumn("rid", disabled=True)})
     hunch_path = config.REVIEW_DIR / "hunches.md"
-    hunches = st.text_area("Your hunches",
+    st.markdown("**Your hunches**")
+    st.caption("This is where your own knowledge enters the work, and it is the part no agent can reach. "
+               "Write what you know from the ground: a doubt about a finding, a local reality the sources "
+               "miss, a pattern you have seen across organizations, or a question worth pressing. It is "
+               "weighed when the themes, the research gaps, and the brief are written, and a point that "
+               "rests on your reading is marked as yours. Write as little or as much as you like.")
+    with st.expander("Two examples"):
+        st.markdown(
+            "- Global funders promote a technology that communities in the country resist, for reasons of "
+            "ownership and soil health, so a design that reads well on paper may not be taken up.\n"
+            "- The civil society sector here is fragmented, and funding that requires three organizations "
+            "across two regions to work together has produced better delivery than single grants.")
+    hunches = st.text_area("Your hunches", label_visibility="collapsed",
                            value=hunch_path.read_text(encoding="utf-8") if hunch_path.exists() else "",
-                           height=150)
+                           height=150,
+                           placeholder="What do you know that the sources do not say?")
     if st.button("Save and continue", type="primary"):
         out = edited.copy()
         out["keep"] = out["keep"].map(lambda b: "Y" if b else "N")
@@ -829,7 +994,8 @@ if step >= 3:
 if step >= 4:
     eyebrow("Step four", "Generate the report")
     sc = config.OUT_DIR / "theme_scorecard.xlsx"
-    out_ready = sc.exists()
+    deliv = config.active_spec().get("deliverables")
+    out_ready = sc.exists() or bool(deliv and (config.OUT_DIR / f"{deliv.get('brief', 'brief')}.docx").exists())
     if st.button("Regenerate the report" if out_ready else "Generate", type="primary"):
         with st.status("Clustering into themes and writing the memo..."):
             run_async(pipeline.run_stage2())
@@ -845,6 +1011,18 @@ if step >= 4:
         docs = [("Theme scorecard", "the decision layer", config.OUT_DIR / "theme_scorecard.xlsx"),
                 ("Innovation map", "the evidence, by theme", config.OUT_DIR / "innovation_map.xlsx"),
                 ("Synthesis memo", "Word document, house style", config.OUT_DIR / "synthesis_memo.docx")]
+        if deliv:
+            opts = config.OUT_DIR / f"{deliv.get('options', 'options')}.xlsx"
+            if opts.exists():
+                st.dataframe(pd.read_excel(opts, sheet_name="Options"), use_container_width=True, hide_index=True)
+            docs = [("YES scan brief", "Word document, plain language, house style",
+                     config.OUT_DIR / f"{deliv.get('brief', 'brief')}.docx"),
+                    ("Research gaps and options", "the gap register, the coverage map, what exists, "
+                     "and the funders", opts)]
+            notes = config.REVIEW_DIR / "policy_violations.md"
+            if notes.exists():
+                with st.expander("Notes to fix by hand before this goes out"):
+                    st.markdown(notes.read_text(encoding="utf-8"))
         for label, sub, path in docs:
             if path.exists():
                 dc1, dc2 = st.columns([3, 1])

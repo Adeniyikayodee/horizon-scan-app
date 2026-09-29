@@ -195,3 +195,110 @@ def test_prune_dry_run_deletes_nothing(tmp_path, monkeypatch):
 def test_prune_with_no_runs_directory(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "ROOT", tmp_path)
     assert P.prune_runs(keep=5) == []
+
+
+
+def test_spend_cap_stops_new_calls(monkeypatch):
+    import asyncio
+    import pytest
+    from scan import client, config
+    monkeypatch.setattr(config, "DRY_RUN", False)
+    monkeypatch.setattr(config, "PROVIDER", "openrouter")
+    monkeypatch.setattr(config, "BUDGET_USD", 1.0)
+    monkeypatch.setattr(client, "BY_MODEL", {"openai/gpt-4o-mini": {"input": 0, "output": 0, "cache_read": 0,
+                                                                    "cache_write": 0, "calls": 0}})
+    monkeypatch.setattr(client, "WEB", {"calls": 250})
+    assert client.cost_usd()[0] >= 1.0, "web requests count toward spend"
+    with pytest.raises(client.BudgetExceeded):
+        asyncio.run(client.structured_call(model="m", frame="f", user="u", schema={}))
+
+
+def test_claude_cli_provider_isolates_and_parses(monkeypatch):
+    import asyncio
+    import json as _json
+    import pytest
+    from scan import client, config
+    monkeypatch.setattr(config, "DRY_RUN", False)
+    monkeypatch.setattr(config, "PROVIDER", "claude-cli")
+    monkeypatch.setattr(config, "BUDGET_USD", 0)
+    monkeypatch.setattr(client, "_CLI_SEM", None)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "should-not-pass")
+    seen = {}
+
+    class Proc:
+        returncode = 0
+
+        async def communicate(self, data):
+            seen["stdin"] = data.decode()
+            return (_json.dumps({"subtype": "success", "is_error": False, "structured_output": {"ok": True},
+                                 "usage": {"input_tokens": 5, "output_tokens": 7}, "total_cost_usd": 0.02}).encode(), b"")
+
+    async def fake_exec(*args, cwd=None, env=None, **kw):
+        seen.update(args=args, cwd=cwd, env=env)
+        seen["system"] = open(args[args.index("--system-prompt-file") + 1]).read()
+        return Proc()
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    out = asyncio.run(client.structured_call(model="m", frame="FRAME", user="USER", schema={"type": "object"}, web=True))
+    assert out == {"ok": True}
+    a = list(seen["args"])
+    assert a[a.index("--setting-sources") + 1] == "" and "--strict-mcp-config" in a and "--no-session-persistence" in a
+    assert a[a.index("--tools") + 1] == "WebSearch,WebFetch" and a[a.index("--model") + 1] == config.CLI_MODEL
+    assert "scan-cli-" in seen["cwd"] and "ANTHROPIC_API_KEY" not in seen["env"]
+    assert seen["stdin"] == "USER" and seen["system"].startswith("FRAME")
+
+    with pytest.raises(RuntimeError):
+        client._parse_cli(_json.dumps({"subtype": "error_max_turns", "is_error": True, "result": "limit"}))
+
+
+def test_claude_cli_semaphore_survives_new_event_loops(monkeypatch):
+    import asyncio
+    import json as _json
+    from scan import client, config
+    monkeypatch.setattr(config, "DRY_RUN", False)
+    monkeypatch.setattr(config, "PROVIDER", "claude-cli")
+    monkeypatch.setattr(config, "BUDGET_USD", 0)
+
+    class Proc:
+        returncode = 0
+
+        async def communicate(self, data):
+            return (_json.dumps({"subtype": "success", "structured_output": {"ok": 1}, "usage": {}}).encode(), b"")
+
+    async def fake_exec(*a, **k):
+        return Proc()
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    for _ in range(2):   # the app's run_async: a new loop each time
+        loop = asyncio.new_event_loop()
+        assert loop.run_until_complete(client.structured_call(model="m", frame="f", user="u", schema={})) == {"ok": 1}
+        loop.close()
+
+
+def test_cli_routing_by_stage(monkeypatch):
+    from scan import client, config, spec
+    monkeypatch.setattr(config, "CLI_ROUTE_MODE", "tiered")
+    monkeypatch.setattr(config, "SPEC", None)
+    assert client.cli_route("evidence_find") == ("claude-opus-5", "high")
+    assert client.cli_route("reader") == ("claude-opus-5", "medium")   # quotes must be verbatim
+    assert client.cli_route("auditor")[0].startswith("claude-haiku")
+    # an unlabelled step falls back to the single model and the call's own effort
+    assert client.cli_route("", "low") == (config.CLI_MODEL, "low")
+    # a profile overrides any row
+    monkeypatch.setattr(config, "SPEC", {**spec.DEFAULT_SPEC, "models": {"reader": {"model": "m", "effort": "max"}}})
+    assert client.cli_route("reader") == ("m", "max")
+    # one-model mode reproduces the first Opus 5 pilot, for comparison
+    monkeypatch.setattr(config, "CLI_ROUTE_MODE", "one")
+    assert client.cli_route("evidence_find") == (config.CLI_MODEL, "medium")
+
+
+def test_cli_args_carry_model_and_effort():
+    from scan import client
+    a = client._cli_args({"type": "object"}, True, "/tmp/p.md", "claude-sonnet-5", "low")
+    assert a[a.index("--model") + 1] == "claude-sonnet-5" and a[a.index("--effort") + 1] == "low"
+
+
+def test_web_steps_get_room_to_search():
+    from scan import client, config
+    web = client._cli_args({}, True, "/tmp/p", "m", "high")
+    assert int(web[web.index("--max-turns") + 1]) == config.CLI_MAX_TURNS_WEB >= 20
+    off = client._cli_args({}, False, "/tmp/p", "m", "low")
+    assert int(off[off.index("--max-turns") + 1]) == 3

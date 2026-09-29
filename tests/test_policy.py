@@ -94,3 +94,9 @@ def test_stage2_delivers_everything_despite_a_violation(monkeypatch):
     finally:
         for k, val in saved.items():
             setattr(config, k, val)
+
+
+def test_tool_names_match_whole_words_only():
+    from scan import guardrail
+    assert guardrail.scan_text("Funded by the Wellspring Philanthropic Fund.") == []
+    assert guardrail.scan_text("Written with Anthropic tools.") == ["banned token: anthropic"]
