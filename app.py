@@ -12,13 +12,14 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import uuid
 from datetime import datetime
 
 import pandas as pd
 import streamlit as st
 
-from scan import agents, client, config, guardrail, io_xlsx, pdf_out, pipeline, sources, spec
+from scan import agents, client, config, guardrail, io_xlsx, pdf_out, pipeline, replay, sources, spec
 
 
 def _secret(key: str, default: str = "") -> str:
@@ -131,10 +132,20 @@ COMPASS = ('<svg width="30" height="30" viewBox="0 0 40 40" fill="none">'
            '<path d="M5 20 L20 17 L35 20 L20 23 Z" fill="#12605A" opacity=".35"/></svg>')
 
 
-# The one model the app runs on: reliable and cheap on OpenRouter's web plugin.
-# If you add an ANTHROPIC_API_KEY, set this to "anthropic/claude-opus-4.8" and it
-# auto-routes to the native Anthropic path (best quality).
-DEFAULT_MODEL = "openai/gpt-4o-mini"
+# What Model 2 runs on. The searching steps use the cheaper model, since their job is
+# to find pages, and the reading, judging, and writing steps use the strong one, since
+# their quotes are checked against the source word for word. Either can be overridden in
+# the server's secrets. Keep the searching model off the anthropic/ prefix: with an
+# ANTHROPIC_API_KEY also on the server, that prefix routes to the Anthropic account
+# instead, and Model 2 would quietly spend the wrong balance.
+DEFAULT_MODEL = _secret("OR_MODEL", "openai/gpt-5-mini")
+DEFAULT_MODEL_STRONG = _secret("OR_MODEL_STRONG", "anthropic/claude-opus-5")
+# A spend cap for Model 2, in US dollars, 0 for none. On a shared link this is the
+# difference between a team trying the tool and a team emptying the balance.
+BUDGET_USD = float(_secret("SCAN_BUDGET_USD", "0") or 0)
+# Model 1 runs the local Claude Code command, which exists on the analyst's machine and
+# not on a server, so the choice is only offered where it can actually run.
+CLI_READY = bool(shutil.which(config.CLI_BIN))
 
 
 def masthead() -> None:
@@ -616,33 +627,50 @@ with st.sidebar:
     st.markdown('<div class="hs-eyebrow" style="margin-top:2px">Progress</div>', unsafe_allow_html=True)
     stepper(st.session_state.step)
     st.markdown('<div style="height:1px;background:var(--line);margin:14px 0"></div>', unsafe_allow_html=True)
-    ENGINES = {"Model 1": "claude-cli", "Model 2": "openrouter"}
+    ENGINES = {"Model 1": "claude-cli", "Model 2": "openrouter"} if CLI_READY else {"Model 2": "openrouter"}
     engine = st.radio("Engine", list(ENGINES), key="engine_pick",
                       help="Model 1 runs on this computer only. Model 2 uses the online account and its balance.")
     config.PROVIDER = ENGINES[engine]
     config.OR_MODEL = DEFAULT_MODEL
+    config.OR_MODEL_STRONG = DEFAULT_MODEL_STRONG
+    config.BUDGET_USD = BUDGET_USD
+    if not CLI_READY:
+        st.caption("Model 1 needs the Claude app on the computer running this page, so it is not "
+                   "offered here. Model 2 runs on the online account.")
+    if BUDGET_USD:
+        st.caption(f"Model 2 stops this run at ${BUDGET_USD:,.0f} of spend.")
     SCANS = {"Horizon scan": None, "YES program scan": "yes"}
     picked = st.selectbox("Scan", list(SCANS), key="scan_pick",
                           help="Horizon scan: new areas for the Hub to enter. YES program scan: proven "
                                "program designs for youth employment and skills, graded on their evidence, "
                                "with a funder scan.")
-    if st.session_state.get("scan_loaded") != picked:
+    config.DRY_RUN = st.checkbox("Test mode, no cost", value=False,
+                                 help="Runs the whole flow with no model calls and no charge. The YES scan "
+                                      "replays a recorded run, with its real sources, quotes, and grades; "
+                                      "the horizon scan uses sample data.")
+    config.REPLAY = config.DRY_RUN
+    # the YES scan in test mode replays a recorded run, so its roster is the recorded one;
+    # a run already past step one keeps the roster it was started with
+    demo = bool(config.DRY_RUN and SCANS[picked] == replay.PROFILE and replay.available())
+    if (st.session_state.get("scan_loaded") != picked
+            or (st.session_state.get("step", 1) == 1 and st.session_state.get("roster_demo", False) != demo)):
         st.session_state.scan_loaded = picked
+        st.session_state.roster_demo = demo
         name = SCANS[picked]
         if name:
             pdir = config.PROFILES_DIR / name
-            prof = json.loads((pdir / "profile.json").read_text(encoding="utf-8"))
+            prof = replay.spec_of_the_run() if demo else json.loads(
+                (pdir / "profile.json").read_text(encoding="utf-8"))
             prof["profile"] = name
             st.session_state.spec = prof
-            st.session_state.roster = io_xlsx.merge_orgs(
-                [{**o, "source": "profile"} for o in io_xlsx.read_orgs(pdir / "organizations.xlsx")], [])
+            orgs = ([{**o, "source": "recorded run"} for o in replay.orgs()] if demo else
+                    [{**o, "source": "profile"} for o in io_xlsx.read_orgs(pdir / "organizations.xlsx")])
+            st.session_state.roster = io_xlsx.merge_orgs(orgs, [])
         else:
             st.session_state.spec = json.loads(json.dumps(spec.DEFAULT_SPEC))
             st.session_state.roster = []
         st.session_state.step = 1
         st.session_state.pop("generated", None)
-    config.DRY_RUN = st.checkbox("Test mode, no cost", value=False,
-                                 help="Runs the whole flow on sample data. No model calls and no charge.")
     scope = st.radio(
         "Scope", ["Africa focus", "Global"], horizontal=True,
         help="Africa focus: search each organization's Africa work and judge it for Africa, the "
@@ -652,6 +680,18 @@ with st.sidebar:
     config.SCAN_MODE = "global" if scope == "Global" else "africa"
     if config.PROVIDER == "openrouter" and not config.OPENROUTER_API_KEY:
         st.error("Model 2 has no key on this server. Add it to .streamlit/secrets.toml.")
+    elif config.PROVIDER == "openrouter" and not config.DRY_RUN:
+        if "or_credit" not in st.session_state:
+            st.session_state.or_credit = client.openrouter_credit()
+        left = st.session_state.or_credit
+        if left is None:
+            st.caption("Model 2 balance could not be read.")
+        elif left < 5:
+            st.error(f"Model 2 has about ${left:,.2f} left on the account. Top it up before running, "
+                     "since without it the searching steps come back empty and the scan looks like "
+                     "it found nothing.")
+        else:
+            st.caption(f"Model 2 balance: about ${left:,.2f}.")
     runs = [r for r in saved_runs() if r["id"] != st.session_state.run_id]
     if runs:
         labels = {f"{SCAN_LABELS.get(r['profile'], 'Horizon scan')}, {r['orgs']} organizations, "
@@ -926,9 +966,22 @@ if step >= 3:
                             column_config={"keep": st.column_config.CheckboxColumn("keep"),
                                            "rid": st.column_config.TextColumn("rid", disabled=True)})
     hunch_path = config.REVIEW_DIR / "hunches.md"
-    hunches = st.text_area("Your hunches",
+    st.markdown("**Your hunches**")
+    st.caption("This is where your own knowledge enters the work, and it is the part no agent can reach. "
+               "Write what you know from the ground: a doubt about a finding, a local reality the sources "
+               "miss, a pattern you have seen across organizations, or a question worth pressing. It is "
+               "weighed when the themes, the research gaps, and the brief are written, and a point that "
+               "rests on your reading is marked as yours. Write as little or as much as you like.")
+    with st.expander("Two examples"):
+        st.markdown(
+            "- Global funders promote a technology that communities in the country resist, for reasons of "
+            "ownership and soil health, so a design that reads well on paper may not be taken up.\n"
+            "- The civil society sector here is fragmented, and funding that requires three organizations "
+            "across two regions to work together has produced better delivery than single grants.")
+    hunches = st.text_area("Your hunches", label_visibility="collapsed",
                            value=hunch_path.read_text(encoding="utf-8") if hunch_path.exists() else "",
-                           height=150)
+                           height=150,
+                           placeholder="What do you know that the sources do not say?")
     if st.button("Save and continue", type="primary"):
         out = edited.copy()
         out["keep"] = out["keep"].map(lambda b: "Y" if b else "N")
@@ -964,7 +1017,8 @@ if step >= 4:
                 st.dataframe(pd.read_excel(opts, sheet_name="Options"), use_container_width=True, hide_index=True)
             docs = [("YES scan brief", "Word document, plain language, house style",
                      config.OUT_DIR / f"{deliv.get('brief', 'brief')}.docx"),
-                    ("Program design options", "options list and funder map", opts)]
+                    ("Research gaps and options", "the gap register, the coverage map, what exists, "
+                     "and the funders", opts)]
             notes = config.REVIEW_DIR / "policy_violations.md"
             if notes.exists():
                 with st.expander("Notes to fix by hand before this goes out"):

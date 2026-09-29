@@ -16,14 +16,25 @@ PROFILE = Path(__file__).resolve().parent.parent / "profiles" / "yes"
 
 def test_profile_is_complete():
     sp = json.loads((PROFILE / "profile.json").read_text())
-    assert len(sp["themes_seed"]) == 10
-    assert [c["key"] for c in sp["criteria"]][:3] == ["evidence_strength", "outcome_relevance", "acet_role"]
+    seed = sp["themes_seed"]
+    assert len(seed) >= 10 and len({t["name"] for t in seed}) == len(seed)
+    assert sum(1 for t in seed if t["relation"] == "current") == 6
+    assert all(t["relation"] in sp["tags"] for t in seed)
+    keys = [c["key"] for c in sp["criteria"]]
+    assert keys[:2] == ["evidence_strength", "research_gap"] and "acet_role" in keys
+    # the criteria carry equal weight, so no dimension is searched less deeply
+    assert len({c["weight"] for c in sp["criteria"]}) == 1
     assert sp["evidence"]["score_key"] == "evidence_strength"
+    # the brief's spine is where the research runs out
+    assert sp["memo"]["sections"][2]["heading"] == "The research gaps to take on"
     assert sp["memo"]["min_words"] < sp["brief_checks"]["target_words"] < sp["memo"]["max_words"]
     for f in ("themes.md", "output_spec.md", "policy.md", "exemplar.md"):
         assert (PROFILE / "context" / f).exists()
     orgs = io_xlsx.read_orgs(PROFILE / "organizations.xlsx")
-    assert len(orgs) == 40 and all(o.get("website", "").startswith("https://") for o in orgs)
+    assert len(orgs) >= 40 and all(o.get("website", "").startswith("https://") for o in orgs)
+    # a gap scan has to read the bodies that produce evidence, not only those that spend it
+    kinds = " ".join(o.get("type", "").lower() for o in orgs)
+    assert "research" in kinds and "evidence platform" in kinds
 
 
 def test_evidence_mark_is_set_from_the_level():
@@ -55,18 +66,22 @@ def test_yes_dry_run_end_to_end(monkeypatch):
     asyncio.run(pipeline.run_stage2())
     out = config.OUT_DIR
     assert (out / "yes_scan_brief.md").exists() and (out / "yes_scan_brief.docx").exists()
-    wb = load_workbook(out / "program_design_options.xlsx")
-    assert wb.sheetnames == ["Options", "Funder map"]
+    wb = load_workbook(out / f"{config.active_spec()['deliverables']['options']}.xlsx")
+    assert wb.sheetnames == ["Options", "Research gaps", "Coverage map", "Funder map"]
+    cov = list(wb["Coverage map"].iter_rows(values_only=True))
+    assert cov[0][:4] == ("Theme", "Posture", "Options", "Best evidence") and "Ghana" in cov[0]
+    gaps = list(wb["Research gaps"].iter_rows(values_only=True))
+    assert gaps[0][0] == "Research gap" and len(gaps) > 1
     rows = list(wb["Options"].iter_rows(values_only=True))
     header = rows[0]
     themes = {r[header.index("Theme")] for r in rows[1:]}
     allowed = {t["name"] for t in config.active_spec()["themes_seed"]} | {None, ""}
     assert themes <= allowed, "every option sits in a theme from the fixed list, or awaits review"
     postures = {r[header.index("Posture")] for r in rows[1:]}
-    assert postures <= {"adopt", "adapt", "watch"}
-    # nothing in test mode can be grounded, so nothing may read above watch
-    assert postures == {"watch"}
-    assert len(list(wb["Funder map"].iter_rows())) - 1 == 21
+    assert postures <= {"use", "scope", "commission"}
+    # nothing in test mode can be grounded, so every question reads as uncovered
+    assert postures == {"commission"}
+    assert len(list(wb["Funder map"].iter_rows())) - 1 >= 21
     assert not (out / "theme_scorecard.xlsx").exists()
 
 

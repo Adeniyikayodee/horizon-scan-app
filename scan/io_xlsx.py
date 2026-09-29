@@ -437,10 +437,10 @@ def write_memo(markdown: str) -> Path:
 
 # --- a profile's options workbook ------------------------------------------------
 OPTION_COLUMNS = [
-    "Theme", "Option", "Organization", "Design", "Target group", "Where it runs",
+    "Theme", "Option", "Organization", "Design", "Level of view", "Target group", "Where it runs",
     "Delivery partner", "Evidence level", "Evaluation", "Evaluation link", "Evaluation year",
     "Outcome and effect", "Cost per outcome", "Inclusion reach", "Transfer note", "ACET's role",
-    "Funders", "Posture", "Relation", "Verification", "Program source",
+    "Open questions", "Funders", "Posture", "Relation", "Verification", "Program source",
 ]
 FUNDER_COLUMNS = [
     "Funder", "Type", "Why it is here", "Fit score", "Themes matched", "Priority countries matched",
@@ -455,8 +455,17 @@ def _cell(v: Any) -> Any:
     return "" if v is None else v
 
 
+GAP_COLUMNS = [
+    "Research gap", "Theme", "Rests on", "Quoted line", "Source", "What is already known",
+    "Countries covered", "Countries with nothing", "Not yet answered for",
+    "What it would take", "Who is closest", "Checked",
+]
+
+
 def write_options(rows: list[dict[str, Any]], themes: list[dict[str, Any]], funder_map: list[dict[str, Any]],
-                  path: Path) -> tuple[Path, list[str]]:
+                  path: Path, gaps: list[dict[str, Any]] | None = None,
+                  coverage_columns: list[str] | None = None,
+                  coverage_rows: list[list[Any]] | None = None) -> tuple[Path, list[str]]:
     """The program design options list and the funder map, one workbook. Every text
     cell goes through the same scrub as the brief, and anything the scrub cannot fix
     is returned for the policy notes."""
@@ -493,15 +502,33 @@ def write_options(rows: list[dict[str, Any]], themes: list[dict[str, Any]], fund
             cost = r.get("cost_data") or "not found"
         ws.append(clean([
             t.get("name", ""), r.get("name", ""), r.get("org", ""), r.get("design_features") or r.get("what", ""),
-            r.get("target_group", ""), r.get("countries", ""), r.get("delivery_partner", ""),
+            r.get("level_of_view", ""), r.get("target_group", ""), r.get("countries", ""),
+            r.get("delivery_partner", ""),
             rec.get("label", ""), best.get("title", "") or rec.get("note", ""), best.get("url", ""),
             best.get("year", ""), best.get("effect_summary", ""), cost,
             r.get("inclusion") or s.get("reason_inclusion", ""), s.get("reason_transferability", ""),
-            s.get("reason_acet_role", ""),
+            s.get("reason_acet_role", ""), r.get("open_questions", ""),
             list(dict.fromkeys((rec.get("funders") or []) + [x.strip() for x in str(r.get("funders", "")).split(";") if x.strip()])),
             r.get("posture", ""), t.get("tag", ""), (r.get("verification") or {}).get("status", ""), r.get("url", ""),
         ]))
 
+    if gaps:
+        gs = wb.create_sheet("Research gaps")
+        gs.append(GAP_COLUMNS)
+        for g in gaps:
+            gs.append(clean([
+                g.get("question", ""), g.get("theme", ""),
+                "a source says so" if g.get("basis") == "stated" else "the coverage map",
+                g.get("quote", ""), g.get("source", ""), g.get("what_is_known", ""),
+                g.get("countries_covered", []), g.get("countries_missing", []),
+                g.get("inclusion_gap", ""), g.get("what_it_would_take", ""), g.get("who_is_closest", ""),
+                "checked against the material" if g.get("grounded") else g.get("ground_note", "not checked"),
+            ]))
+    if coverage_columns and coverage_rows is not None:
+        cs = wb.create_sheet("Coverage map")
+        cs.append(coverage_columns)
+        for r in coverage_rows:
+            cs.append(clean(list(r)))
     fs = wb.create_sheet("Funder map")
     fs.append(FUNDER_COLUMNS)
     for f in funder_map:

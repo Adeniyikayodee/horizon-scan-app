@@ -44,12 +44,16 @@ OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.
 # When PROVIDER=openrouter this model runs the finding, reading, and web stages,
 # where a cheap model is enough. Set it, e.g. openai/gpt-4o-mini.
 OR_MODEL = os.environ.get("OR_MODEL", "")
+# A reasoning model spends its thinking inside the output budget, so a cap sized for an
+# answer alone stops it before it writes one. This floor is a ceiling on what the model
+# MAY use, not what it is billed for, so it is set generously.
+OR_MIN_OUTPUT = int(os.environ.get("OR_MIN_OUTPUT", "16000"))
 # The stronger model for the writing and judgment stages (scoring, auditing,
 # theming, and the memo), where prose quality and reasoning matter. It runs only on
 # stages that do NOT use the web plugin, since Claude underperforms through it, so
 # the cheap model keeps the search while this model writes. Empty means use OR_MODEL
 # for everything.
-OR_MODEL_STRONG = os.environ.get("OR_MODEL_STRONG", "anthropic/claude-sonnet-4")
+OR_MODEL_STRONG = os.environ.get("OR_MODEL_STRONG", "anthropic/claude-opus-5")
 OR_REFERER = os.environ.get("OR_REFERER", "https://acet-horizon-scan.local")
 OR_TITLE = os.environ.get("OR_TITLE", "ACET Horizon Scan")
 
@@ -75,6 +79,7 @@ CLI_CONCURRENCY = int(os.environ.get("CLI_CONCURRENCY", "3"))
 CLI_ROUTING: dict[str, dict[str, str]] = {
     "evidence_find": {"model": "claude-opus-5", "effort": "high"},
     "themer": {"model": "claude-opus-5", "effort": "high"},
+    "gaps": {"model": "claude-opus-5", "effort": "high"},
     "synthesizer": {"model": "claude-opus-5", "effort": "high"},
     "editor": {"model": "claude-opus-5", "effort": "high"},
     # The reading steps stay on the strongest model: their quotes must match the source
@@ -109,6 +114,9 @@ MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "4"))
 
 # Dry run: mock every model call, no key or network needed. Set via env or CLI.
 DRY_RUN = os.environ.get("SCAN_DRY_RUN", "").lower() in ("1", "true", "yes")
+# In a dry run, replay a recorded run instead of the canned mocks (scan/replay.py).
+# The app turns this on with its test-mode box; tests and the command line leave it off.
+REPLAY = os.environ.get("SCAN_REPLAY", "").lower() in ("1", "true", "yes")
 
 # Ground the verifier: fetch the source and check the confirming quote is in it.
 GROUND_QUOTES = os.environ.get("GROUND_QUOTES", "1").lower() in ("1", "true", "yes")
@@ -132,8 +140,17 @@ PDF_MAX_PAGES = int(os.environ.get("PDF_MAX_PAGES", "80"))           # pages pul
 # with its cost left unstated, because a made-up price is worse than no price. Add
 # or override with SCAN_PRICES as JSON: {"model-id": [input, output]}.
 PRICES: dict[str, tuple[float, float]] = {
+    # US dollars per million tokens, input then output, as OpenRouter lists them.
+    # A model with no entry here runs with its cost uncounted, which also means the
+    # spend cap cannot see it, so add a model here when you point the app at it.
     "openai/gpt-4o-mini": (0.15, 0.60),
+    "openai/gpt-5-mini": (0.25, 2.00),
+    "openai/gpt-5-nano": (0.05, 0.40),
+    "openai/gpt-5": (1.25, 10.00),
     "anthropic/claude-sonnet-4": (3.00, 15.00),
+    "anthropic/claude-haiku-4.5": (1.00, 5.00),
+    "anthropic/claude-sonnet-5": (2.00, 10.00),
+    "anthropic/claude-opus-5": (5.00, 25.00),
 }
 try:
     import json as _json

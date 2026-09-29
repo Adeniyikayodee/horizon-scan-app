@@ -544,6 +544,10 @@ def prompt(sp: dict, name: str, default: str) -> str:
     return (sp.get("prompts") or {}).get(name) or default
 
 
+def themes_seed_names(sp: dict) -> list[str]:
+    return [t.get("name", "") for t in sp.get("themes_seed") or []]
+
+
 def postures(sp: dict) -> list[str]:
     return list(sp.get("postures") or _HORIZON_POSTURES)
 

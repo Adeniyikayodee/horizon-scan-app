@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import config, spec as spec_mod
+from . import config, replay, spec as spec_mod
 
 _MARKS = ["strong", "partial", "weak"]
 
@@ -190,6 +190,19 @@ def _synth() -> dict[str, Any]:
             "scorecard_intro": "Themes scored on the criteria, with two clean new areas to enter first."}
 
 
+def _gaps(user: str) -> dict[str, Any]:
+    themes = [l.split('"name": "')[1].split('"')[0] for l in user.splitlines() if '"name": "' in l]
+    print(f"  gaps     drafting the register across {len(set(themes))} themes")
+    return {"gaps": [{
+        "question": "What does it take for a training system to raise productivity across an economy?",
+        "theme": themes[0] if themes else "", "basis": "coverage", "quote": "",
+        "source": "The coverage map", "what_is_known": "Single programs are evaluated, systems are not.",
+        "countries_covered": ["Ghana"], "countries_missing": ["Niger"],
+        "inclusion_gap": "Not answered for young people with disabilities.",
+        "what_it_would_take": "A study across several countries that follows the system, not one project.",
+        "who_is_closest": "An independent research group."}]}
+
+
 def _hunches() -> dict[str, Any]:
     print("  hunches  seeding cross-org patterns")
     return {"patterns": [
@@ -233,6 +246,9 @@ def _funder(subj: str) -> dict[str, Any]:
 
 
 def mock_response(schema: dict[str, Any], user: str) -> dict[str, Any]:
+    recorded = replay.respond(schema, user)
+    if recorded is not None:
+        return recorded
     keys = set(schema.get("properties", {}).keys())
     subj = _subject(user)
     h = sum(ord(c) for c in user)
@@ -263,6 +279,8 @@ def mock_response(schema: dict[str, Any], user: str) -> dict[str, Any]:
         return _themes(user)
     if "memo_markdown" in keys:
         return _synth()
+    if "gaps" in keys:
+        return _gaps(user)
     if "patterns" in keys:
         return _hunches()
     return {}

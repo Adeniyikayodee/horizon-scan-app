@@ -21,7 +21,8 @@ from typing import Any, Callable
 
 Progress = Callable[[dict], None] | None
 
-from . import agents, client, config, docx_out, funders, guardrail, io_xlsx, ladder, sources, spec
+from . import (agents, client, config, coverage, docx_out, funders, guardrail, io_xlsx, ladder, replay,
+               sources, spec)
 
 
 def _today() -> str:
@@ -333,12 +334,12 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
                     continue
                 appr["evidence_record"] = rec
                 _set_evidence_mark(appr, rec, evcfg)
-                if not ladder.entry_allowed(rec["level"], rec["african"], evcfg.get("geography") or {}):
-                    # below the bar stays visible, unticked, so a reviewer can see the
-                    # evidence tried and override the level; it is never silently lost
-                    where = "outside Africa" if rec["african"] is False else "in Africa"
+                held = _entry_check(appr, rec, evcfg)
+                if held:
+                    # a row held back stays visible, unticked, so a reviewer can see the
+                    # evidence tried and override it; it is never silently lost
                     appr["keep_default"] = "N"
-                    rec["flags"] = [f"below the evidence bar: {rec['label']} for a program {where}"] + rec["flags"]
+                    rec["flags"] = [held] + rec["flags"]
                 passed.append(appr)
                 await tick()
             scored = passed
@@ -354,7 +355,8 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
             rows.append({
                 "org": org["name"], "name": appr["name"], "year": appr.get("year", ""),
                 "url": appr.get("url", ""), "source_type": appr.get("source_type", ""),
-                "band": appr.get("band", ""), "accessed": _today(),
+                "band": appr.get("band", ""),
+                "accessed": replay.row_value(appr.get("name", ""), "accessed") or _today(),
                 "report_title": appr.get("report_title", ""), "report_date": appr.get("report_date", ""),
                 "what": appr.get("what", ""), "evidence": appr.get("evidence", ""),
                 "uptake": appr.get("uptake", ""), "quotes": appr.get("quotes", []),
@@ -419,7 +421,7 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
             row["audit"] = au
             # fix 1: check the confirming quote is actually in the source (policy-trust)
             q = (row.get("verification") or {}).get("confirming_quote", "")
-            if config.GROUND_QUOTES and not config.DRY_RUN and q:
+            if config.GROUND_QUOTES and q:
                 row["quote_grounded"] = await asyncio.to_thread(
                     sources.quote_grounded, row.get("url", ""), q)
             else:
@@ -428,7 +430,7 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
             # the Verifier's confirming quote? Catches a reading pulled from a real but
             # unrelated page, the deepest remaining hallucination path
             rq = [x for x in (row.get("quotes") or []) if x][:3]
-            if config.GROUND_QUOTES and not config.DRY_RUN and rq and row.get("url"):
+            if config.GROUND_QUOTES and rq and row.get("url"):
                 checks = [await asyncio.to_thread(sources.quote_grounded, row["url"], x) for x in rq]
                 if any(c is True for c in checks):
                     row["reading_grounded"] = True
@@ -461,6 +463,40 @@ async def _process_org(ctx, org, sem, progress: Progress = None) -> dict[str, An
 
 
 _LEVEL_MARK = {5: "strong", 4: "strong", 3: "partial", 2: "weak", 1: "weak"}
+_NOT_FOUND = ("", "not found", "none", "n/a", "unclear", "not stated")
+
+
+def _names_an_open_question(appr: dict[str, Any]) -> bool:
+    q = str(appr.get("open_questions", "")).strip().lower()
+    return bool(q) and q not in _NOT_FOUND and not q.startswith("not found")
+
+
+def _looks_system_wide(appr: dict[str, Any]) -> bool:
+    v = str(appr.get("level_of_view", "")).strip().lower()
+    return any(w in v for w in ("system", "ecosystem", "sector", "national", "policy",
+                                "country", "countries", "cross", "review"))
+
+
+def _entry_check(appr: dict[str, Any], rec: dict[str, Any], evcfg: dict[str, Any]) -> str:
+    """Empty when the row earns its place, else the plain reason it does not.
+
+    The evidence rule holds a proven-design scan to a bar: a program with too little
+    evidence cannot be recommended. A gap scan needs the opposite instinct, since a
+    thin area is the finding, so there the bar falls on what is useless to a research
+    institute: a single project write-up that names no open question and carries no
+    evidence firm enough to act on."""
+    level, african = int(rec.get("level", 1)), rec.get("african")
+    geo = evcfg.get("geography") or {}
+    settled = ladder.entry_allowed(level, african, geo)
+    if (evcfg.get("entry_rule") or "evidence") != "gap":
+        if settled:
+            return ""
+        where = "outside Africa" if african is False else "in Africa"
+        return f"below the evidence bar: {rec.get('label', 'E1')} for a program {where}"
+    if settled or _names_an_open_question(appr) or _looks_system_wide(appr):
+        return ""
+    return ("a single project with no open question named and no evidence firm enough "
+            f"to act on ({rec.get('label', 'E1')})")
 
 
 def _set_evidence_mark(appr: dict[str, Any], rec: dict[str, Any], evcfg: dict[str, Any]) -> None:
@@ -528,6 +564,8 @@ async def _evidence_for(ctx, org: dict[str, str], appr: dict[str, Any], evcfg: d
         doc = "" if config.DRY_RUN else await asyncio.to_thread(sources.fetch_text, url, config.READ_MAX_CHARS)
         if not doc and not config.DRY_RUN:
             continue                       # an evaluation we cannot read cannot be graded
+        if not replay.readable(appr.get("name", ""), url):
+            continue                       # the recorded run could not read it either
         r = await agents.read_evidence(ctx, appr, ev, doc)
         if ev.get("own"):
             r["independent"] = False       # the program's own document is never independent
@@ -637,7 +675,12 @@ async def run_funders(ctx, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def apply_posture_gates(rows: list[dict[str, Any]], themes: list[dict[str, Any]], gates: dict[str, Any]) -> None:
     """Postures follow the evidence, in code. Each option takes the best posture its
     evidence level allows. Each theme keeps the model's proposed posture only when
-    its strongest member's evidence allows it, and is lowered otherwise, never raised."""
+    its strongest member's evidence allows it, and is lowered otherwise, never raised.
+
+    Where the gates are banded, each level maps to exactly one posture, so the code
+    sets the theme's posture outright and records what the model had proposed. A
+    theme is read at its best-covered member, so a gap is never claimed in an area
+    where something is already known."""
     for r in rows:
         rec = r.get("evidence_record") or {}
         r["posture"] = ladder.best_posture(int(rec.get("level", 1)), bool(rec.get("replicated_in_africa")), gates)
@@ -647,10 +690,76 @@ def apply_posture_gates(rows: list[dict[str, Any]], themes: list[dict[str, Any]]
         level = max([int(x.get("level", 1)) for x in recs] or [1])
         repl = any(x.get("replicated_in_africa") for x in recs)
         proposed = t.get("posture", "")
-        t["posture"] = ladder.cap_posture(proposed, level, repl, gates)
+        t["posture"] = (ladder.best_posture(level, repl, gates) if ladder.banded(gates)
+                        else ladder.cap_posture(proposed, level, repl, gates))
         t["evidence_level"] = ladder.label(level)
         if t["posture"] != proposed:
             t["posture_note"] = f"proposed {proposed}, evidence ({ladder.label(level)}) allows {t['posture']}"
+
+
+def _flat(v: Any) -> str:
+    return " ".join(v) if isinstance(v, list) else str(v or "")
+
+
+def _norm_text(s: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[\u2018\u2019\u201c\u201d]", "'", str(s or ""))).strip().lower()
+
+
+def scan_reach(kept: list[dict[str, Any]], themes: list[dict[str, Any]]) -> dict[str, Any]:
+    """How hard this scan looked, counted in code. A gap claim rests on it: saying the
+    evidence is not there means little until the reader knows what was searched, read,
+    and graded, so these figures go to the brief as facts it may not invent."""
+    manifest = _load_manifest()
+    evals = [e for r in kept for e in (r.get("evidence_record") or {}).get("evaluations") or []]
+    searched = sum(1 for r in kept if r.get("evidence_record"))
+    return {
+        "organizations_scanned": len(manifest) or len({r.get("org", "") for r in kept}),
+        "organizations_with_something": len({r.get("org", "") for r in kept}),
+        "options_after_review": len(kept),
+        "sources_read": len({r.get("url", "") for r in kept if r.get("url")}),
+        "options_whose_evidence_was_searched": searched,
+        "evaluations_found_and_graded": len(evals),
+        "independent_evaluations": sum(1 for e in evals if e.get("independent_checked")),
+        "options_where_no_independent_evaluation_was_found":
+            sum(1 for r in kept if (r.get("evidence_record") or {}).get("note") == "no independent evaluation found"),
+        "themes_with_nothing_found": sum(1 for t in themes if not (t.get("members") or [])),
+        "themes_in_the_list": len(spec.themes_seed_names(config.active_spec())) or len(themes),
+    }
+
+
+def ground_gaps(gaps: list[dict[str, Any]], rows: list[dict[str, Any]],
+                cov: list[dict[str, Any]], themes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A gap must rest on something this scan read. A gap said to be stated carries a
+    quote, and that quote has to appear word for word in the material the rows hold; a
+    gap said to come from coverage has to name a country the map really shows empty.
+    A gap that fails is kept for the reviewer and marked, and the brief never sees it,
+    so the register cannot fill with questions nobody raised."""
+    material = [_norm_text(" ".join(_flat(r.get(f)) for f in
+                                    ("what", "evidence", "uptake", "access_note", "open_questions", "quotes")))
+                for r in rows]
+    names = {t.get("name", "") for t in themes}
+    by_theme = {c.get("theme", ""): c for c in cov}
+    out = []
+    for g in gaps:
+        g = dict(g)
+        note = ""
+        if g.get("theme") not in names:
+            note = "theme is not one of this scan's themes"
+        elif g.get("basis") == "stated":
+            q = _norm_text(g.get("quote", ""))
+            if len(q) < 25:
+                note = "no quoted line long enough to check"
+            elif not any(q in m for m in material):
+                note = "the quoted line is not in the material this scan read"
+        else:
+            row = by_theme.get(g.get("theme", "")) or {}
+            empty = [c for c in g.get("countries_missing") or [] if not str(row.get(c, "")).strip()]
+            if not empty:
+                note = "the coverage map does not show those countries empty"
+        g["grounded"] = not note
+        g["ground_note"] = note
+        out.append(g)
+    return out
 
 
 def _reject_dead_corroboration(corr: dict[str, Any], dead: bool) -> dict[str, Any]:
@@ -943,6 +1052,28 @@ async def run_stage2() -> None:
             dead = bool(cu) and not config.DRY_RUN and await asyncio.to_thread(sources.link_dead, cu)
             t["corroboration"] = _reject_dead_corroboration(corr, dead)
 
+    # the research gap register: the model reads the themes and the coverage map and
+    # proposes the open questions, then the code checks each one against the material
+    gap_rows: list[dict[str, Any]] = []
+    cov_records: list[dict[str, Any]] = []
+    countries = [c for c in ((spec.funder_config(config.active_spec()) or {}).get("priority_countries") or [])]
+    study = config.active_spec().get("study") or {}
+    study_countries = [c for c in (study.get("countries") or []) if c in countries]
+    if config.active_spec().get("gap_register"):
+        cov_records = coverage.grid(kept, themes, countries, study_countries)
+        print(f"stage 2: reading the coverage map across {len(countries)} priority countries"
+              + (f", {len(study_countries)} of them in {study.get('name', 'the institute\'s own study')}"
+                 if study_countries else ""))
+        try:
+            gap_rows = await agents.gaps(ctx, themes, cov_records, hunches)
+        except Exception as e:
+            print(f"  ! the gap register failed ({str(e)[:100]}), the brief runs without it")
+            gap_rows = []
+        gap_rows = ground_gaps(gap_rows, kept, cov_records, themes)
+        held = [g for g in gap_rows if not g["grounded"]]
+        print(f"stage 2: {len(gap_rows)} research gap(s), {len(gap_rows) - len(held)} grounded in the material"
+              + (f", {len(held)} held back for the reviewer" if held else ""))
+
     deliv = config.active_spec().get("deliverables")
     extra = ""
     sp_now = config.active_spec()
@@ -961,6 +1092,28 @@ async def run_stage2() -> None:
         sp_now["brief_checks"] = {**sp_now["brief_checks"],
                                   "theme_names": [t["name"] for t in sp_now.get("themes_seed") or []],
                                   "allowed_acronyms": _known_acronyms(kept, funder_map or [])}
+    if config.active_spec().get("gap_register"):
+        extra += ("How far this scan reached, counted from the run itself. State these as they are, and "
+                  "never give a figure for reach that is not here:\n"
+                  + json.dumps(scan_reach(kept, themes), ensure_ascii=False, indent=2) + "\n\n")
+    if gap_rows:
+        good = [{k: g[k] for k in ("question", "theme", "basis", "quote", "source", "what_is_known",
+                                   "countries_covered", "countries_missing", "inclusion_gap",
+                                   "what_it_would_take", "who_is_closest")}
+                for g in gap_rows if g.get("grounded")]
+        extra += ("Research gaps, each checked against the material this scan read. Lead with these, and use "
+                  "no gap that is not here:\n" + json.dumps(good, ensure_ascii=False, indent=2) + "\n\n")
+    if cov_records:
+        extra += ("Coverage by theme and country, where an empty value means this scan found nothing there:\n"
+                  + json.dumps(cov_records, ensure_ascii=False, indent=2) + "\n\n")
+    if study_countries:
+        extra += (f"{study.get('name', 'The institute\'s own study')} covers {', '.join(study_countries)}. "
+                  "Where the map shows a theme empty in those countries, say so against that study by name, "
+                  "since a gap there is one the institute is already placed to fill.\n\n")
+    if hunches.strip() and config.active_spec().get("hunches_in_brief"):
+        extra += ("The analyst's own reading, which carries local knowledge the sources do not hold. Weigh it "
+                  "where it bears on a finding, and say plainly in the sentence when a point rests on it "
+                  "rather than on a source:\n" + hunches.strip() + "\n\n")
     if funder_map:
         top = [{"funder": f.get("name", ""), "fit": (f.get("fit") or {}).get("score"),
                 "themes": (f.get("fit") or {}).get("themes_matched"),
@@ -971,7 +1124,8 @@ async def run_stage2() -> None:
         extra += "Funders ranked by fit, from their own pages:\n" + json.dumps(top, ensure_ascii=False, indent=2)
     synth = await (agents.synthesize(ctx, themes, extra) if extra else agents.synthesize(ctx, themes))
     if deliv:
-        await _write_profile_deliverables(deliv, synth, kept, themes, funder_map or [], top2)
+        await _write_profile_deliverables(deliv, synth, kept, themes, funder_map or [], top2,
+                                          gap_rows, countries, cov_records, study_countries)
         return
 
     # The policy check runs BEFORE the first write, and never raises. By this point
@@ -1013,7 +1167,10 @@ def _known_acronyms(rows: list[dict[str, Any]], funder_map: list[dict[str, Any]]
 
 
 async def _write_profile_deliverables(deliv: dict[str, str], synth: dict[str, Any], kept, themes,
-                                      funder_map, lead: list[str]) -> None:
+                                      funder_map, lead: list[str], gap_rows: list[dict[str, Any]] | None = None,
+                                      countries: list[str] | None = None,
+                                      cov_records: list[dict[str, Any]] | None = None,
+                                      study_countries: list[str] | None = None) -> None:
     """A profile's own deliverables: the brief (markdown and Word) and the options
     workbook with the funder map. Written whole, with every policy or style note left
     beside them, never instead of them."""
@@ -1021,8 +1178,11 @@ async def _write_profile_deliverables(deliv: dict[str, str], synth: dict[str, An
     name = deliv.get("brief", "brief")
     (config.OUT_DIR / f"{name}.md").write_text(brief.rstrip() + "\n", encoding="utf-8")
     docx_out.write_memo_docx(brief, config.OUT_DIR / f"{name}.docx")
-    opath, cell_hits = io_xlsx.write_options(kept, themes, funder_map,
-                                             config.OUT_DIR / f"{deliv.get('options', 'options')}.xlsx")
+    opath, cell_hits = io_xlsx.write_options(
+        kept, themes, funder_map, config.OUT_DIR / f"{deliv.get('options', 'options')}.xlsx",
+        gaps=gap_rows or None,
+        coverage_columns=coverage.columns(countries or [], study_countries) if cov_records else None,
+        coverage_rows=coverage.as_rows(cov_records, countries or [], study_countries) if cov_records else None)
     notes = guardrail.title_notes(brief) + list(synth.get("plain_issues") or [])
     vpath = io_xlsx.write_policy_violations(
         [(f"{name}.md", brief, brief_hits), (opath.name, "", cell_hits), (f"{name}.md, plain language and house style", brief, notes)])

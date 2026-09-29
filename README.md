@@ -43,9 +43,18 @@ the cited source.
 
 The scan and the engine are separate choices, in the app's sidebar or on the command line.
 
-- **Scan.** *Horizon* looks for new areas the Hub could enter. *YES* looks for proven program
-  designs for youth employment and skills, grades them on their evidence, and adds a funder scan.
+- **Scan.** *Horizon* looks for new areas the Hub could enter. *YES* looks for the research gaps in
+  youth employment and skills: where the evidence is thin, absent, or unaddressed across a whole
+  system, what it would take to fill each gap, and who funds work of that kind. It grades how well
+  covered each question already is, maps that coverage country by country, and adds a funder scan.
   On the command line: `--profile yes`, or nothing for the horizon scan.
+
+  The YES scan reads the evidence level as **coverage**, not merit. A question with an independent
+  trial behind it is settled, so its posture is *use*; one with a credible comparison behind it is
+  half settled, so *scope*; one with neither is open, so *commission*. That inversion is in the
+  profile's gates, and the code sets the posture from the band. It also changes what earns a place
+  in the map: a thin area is a finding, so what is held back is the opposite, a single project
+  write-up that names no open question and carries no evidence firm enough to act on.
 - **Engine.** *Model 1* runs every step through the local Claude Code command on the analyst's own
   login, for runs on this machine. *Model 2* runs through OpenRouter on its key and balance. On the
   command line: `--provider claude-cli` or `--provider openrouter`.
@@ -54,7 +63,7 @@ Model 1 sends each step to the model that suits it, and either scan routes the s
 
 | Step | Model | Effort |
 |---|---|---|
-| Evidence search, theming, the brief, the rewrite pass | Opus 5 | high |
+| Evidence search, theming, the gap register, the brief, the rewrite pass | Opus 5 | high |
 | Reader, Evidence reader, Verifier | Opus 5 | medium |
 | Scout, Librarian, Discovery, funders, corroboration | Sonnet 5 | low to medium |
 | Scorer, Auditor, hunches, framing added organizations | Haiku 4.5 | low |

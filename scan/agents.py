@@ -420,6 +420,10 @@ async def read(ctx: dict[str, str], cand: dict[str, str]) -> dict[str, Any]:
     r["read_chars"] = len(doc)
     r["source_chars"] = full_len
     r["source_truncated"] = full_len > len(doc)
+    if config.DRY_RUN and "read_chars" in out:     # a replay carries what the recorded run read
+        for k in ("source_reachable", "read_chars", "source_chars", "source_truncated"):
+            if out.get(k) is not None:
+                r[k] = out[k]
     return r
 
 
@@ -953,3 +957,90 @@ async def funder(ctx: dict[str, str], f: dict[str, Any], cfg: dict[str, Any]) ->
             rec[k]["period"] = _s(item.get("period"))
     rec["calls"] = [c for c in _list(out.get("calls")) if isinstance(c, dict)]
     return rec
+
+
+# --- the Gap agent: the register of open questions ---------------------------------
+GAP_I = """
+You are the Gap analyst. You are given the themes of this scan, with the work found
+under each, what each piece establishes, how well covered it is, and the questions each
+source says remain open. Write the register of research gaps.
+
+A gap is a question about how a whole system works that the evidence in front of you
+does not answer, of the kind an institute could commission research on. It is not a
+project that has not been evaluated, and it is not a topic that sounds interesting.
+
+Record a gap only when one of these holds, and say which:
+- a source states the question is open, and you quote that source word for word;
+- the coverage in front of you shows the question is answered in one place and not in
+  the countries that matter here, and you name both.
+
+For each gap give: the question in one plain sentence; the theme it belongs to, by its
+exact name; the quote, copied word for word from the material given, that shows the
+question is open, or an empty string when the gap rests on coverage instead; the source
+that quote comes from; what is already known and how firmly; which countries the
+existing work covers and which it does not; whether the question is answered for young
+women, young people with disabilities, refugees and internally displaced people, and
+young people in informal work, or not; what it would take to answer it; and who is
+closest to the work already.
+
+Never invent a quote, a figure, a country, or a study. Where the material does not say,
+write not found. Ground every gap in the material given; you are not searching the web.
+Call record once.
+"""
+
+GAP_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["gaps"],
+    "properties": {"gaps": {"type": "array", "items": {
+        "type": "object", "additionalProperties": False,
+        "required": ["question", "theme", "basis", "quote", "source", "what_is_known",
+                     "countries_covered", "countries_missing", "inclusion_gap",
+                     "what_it_would_take", "who_is_closest"],
+        "properties": {
+            "question": {"type": "string", "description": "The open question, one plain sentence."},
+            "theme": {"type": "string", "description": "The theme's exact name."},
+            "basis": {"type": "string", "enum": ["stated", "coverage"],
+                      "description": "stated: a source says it is open. coverage: the map shows it."},
+            "quote": {"type": "string", "description": "Word for word from the material, or empty."},
+            "source": {"type": "string", "description": "The organization and document the quote is from."},
+            "what_is_known": {"type": "string"},
+            "countries_covered": {"type": "array", "items": {"type": "string"}},
+            "countries_missing": {"type": "array", "items": {"type": "string"}},
+            "inclusion_gap": {"type": "string",
+                              "description": "Who the question is not yet answered for, or not found."},
+            "what_it_would_take": {"type": "string"},
+            "who_is_closest": {"type": "string"},
+        }}}},
+}
+
+
+async def gaps(ctx: dict[str, str], themes_list: list[dict[str, Any]], coverage: list[dict[str, Any]],
+               hunches: str = "") -> list[dict[str, Any]]:
+    """The research gap register, drawn from the themes and the coverage map. Reads
+    only the material given, since every quote is checked against it in code."""
+    import json as _json
+    user = ("Themes and what was found under each:\n"
+            + _json.dumps(themes_list, ensure_ascii=False, indent=2)
+            + "\n\nCoverage, by theme and country, where an empty cell means this scan found nothing:\n"
+            + _json.dumps(coverage, ensure_ascii=False, indent=2))
+    if hunches.strip():
+        user += ("\n\nThe analyst's own reading, which carries local knowledge the sources miss. Weigh it, "
+                 "and where it points to a gap, say that it rests on the analyst's reading:\n" + hunches)
+    out = await structured_call(
+        model=config.MODEL_OPUS, frame=_frame(ctx, ["mission", "scope", "themes"], _i("gaps", GAP_I)),
+        user=user, schema=GAP_SCHEMA, max_tokens=12000, effort="high", tier="strong", stage="gaps")
+    recs = []
+    for g in _list(out.get("gaps")):
+        if not isinstance(g, dict) or not _s(g.get("question")).strip():
+            continue
+        recs.append({
+            "question": _s(g.get("question")), "theme": _s(g.get("theme")),
+            "basis": _enum(g.get("basis"), {"stated", "coverage"}, "coverage"),
+            "quote": _s(g.get("quote")), "source": _s(g.get("source")),
+            "what_is_known": _s(g.get("what_is_known")),
+            "countries_covered": [_s(x) for x in _list(g.get("countries_covered"))],
+            "countries_missing": [_s(x) for x in _list(g.get("countries_missing"))],
+            "inclusion_gap": _s(g.get("inclusion_gap")),
+            "what_it_would_take": _s(g.get("what_it_would_take")),
+            "who_is_closest": _s(g.get("who_is_closest")),
+        })
+    return recs

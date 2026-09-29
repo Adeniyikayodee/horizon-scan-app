@@ -198,13 +198,20 @@ def combine(evaluations: list[dict[str, Any]]) -> dict[str, Any]:
 
 def allowed_postures(level: int, replicated_in_africa: bool, gates: dict[str, Any]) -> list[str]:
     """The postures an option may carry at this evidence level, best first.
-    gates = {"adopt": {"min": 4, "or_replicated_africa_min": 3}, "adapt": {"min": 3},
-             "watch": {"min": 1}}"""
+
+    A gate is a floor, a ceiling, or both:
+      {"adopt": {"min": 4, "or_replicated_africa_min": 3}, "adapt": {"min": 3}, "watch": {"min": 1}}
+    reads the level as merit, which is what a scan for proven designs wants. A scan
+    for research gaps reads the same level as COVERAGE, and says so with ceilings:
+      {"use": {"min": 4}, "scope": {"min": 3, "max": 3}, "commission": {"max": 2}}
+    Thin evidence then earns the posture that says commission the research, rather
+    than the bottom of a merit ladder."""
     out = []
     for posture, g in gates.items():
-        ok = level >= int(g.get("min", 1))
+        ok = level >= int(g.get("min", 1)) and level <= int(g.get("max", 5))
         alt = g.get("or_replicated_africa_min")
-        if not ok and alt is not None and replicated_in_africa and level >= int(alt):
+        if not ok and alt is not None and replicated_in_africa and level >= int(alt) \
+                and level <= int(g.get("max", 5)):
             ok = True
         if ok:
             out.append(posture)
@@ -227,6 +234,12 @@ def cap_posture(proposed: str, level: int, replicated_in_africa: bool, gates: di
     if proposed in order and order.index(proposed) > order.index(best):
         return proposed
     return best
+
+
+def banded(gates: dict[str, Any]) -> bool:
+    """True when the gates carry ceilings, so each level maps to exactly one posture
+    and the code sets it outright rather than capping what a model proposed."""
+    return any("max" in (g or {}) for g in gates.values())
 
 
 def entry_allowed(level: int, african: bool | None, geo: dict[str, Any]) -> bool:

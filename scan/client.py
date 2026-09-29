@@ -148,12 +148,44 @@ def or_client() -> Any:
     return _or_client
 
 
+def openrouter_credit() -> float | None:
+    """What is left on the OpenRouter account, in dollars, or None when it cannot be
+    read. Worth showing plainly: an empty balance does not announce itself, the search
+    steps simply come back with nothing, which reads like a scan that found nothing."""
+    import urllib.request
+
+    if not config.OPENROUTER_API_KEY:
+        return None
+    req = urllib.request.Request(config.OPENROUTER_BASE_URL.rstrip("/") + "/credits",
+                                 headers={"Authorization": f"Bearer {config.OPENROUTER_API_KEY}"})
+    try:
+        import ssl
+
+        ctx = ssl.create_default_context()
+        try:
+            import certifi
+
+            ctx.load_verify_locations(certifi.where())
+        except Exception:
+            pass
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as r:
+            d = json.load(r)["data"]
+        return float(d.get("total_credits", 0)) - float(d.get("total_usage", 0))
+    except Exception:
+        return None
+
+
 async def _openrouter_call(
     frame: str, user: str, schema: dict[str, Any], web: bool, max_tokens: int,
-    or_model: str | None = None,
+    or_model: str | None = None, effort: str | None = None,
 ) -> dict[str, Any]:
     """Run one stage on OpenRouter. Structured output via a forced `record`
-    function; web via OpenRouter's web plugin so browsing stages still work."""
+    function; web via OpenRouter's web plugin so browsing stages still work.
+
+    The stage's effort is passed through as the model's reasoning effort, and the
+    output budget is floored at config.OR_MIN_OUTPUT, because a reasoning model
+    counts its thinking against that budget: at the old 4,096 the searching stages
+    ran out of room mid-thought and returned nothing at all."""
     tool = {
         "type": "function",
         "function": {
@@ -166,6 +198,9 @@ async def _openrouter_call(
     if web:
         body["plugins"] = [{"id": "web", "max_results": config.WEB_MAX_USES}]
         WEB["calls"] += 1
+    if effort in ("low", "medium", "high"):
+        body["reasoning"] = {"effort": effort}
+    max_tokens = max(max_tokens, config.OR_MIN_OUTPUT)
     resp = await or_client().chat.completions.create(
         model=or_model or config.OR_MODEL,
         max_tokens=max_tokens,
@@ -355,7 +390,7 @@ async def structured_call(
             or_model = config.OR_MODEL
             if tier == "strong" and not web and config.OR_MODEL_STRONG:
                 or_model = config.OR_MODEL_STRONG    # a strong model for the writing stages
-            return await _openrouter_call(frame, user, schema, web, max_tokens, or_model)
+            return await _openrouter_call(frame, user, schema, web, max_tokens, or_model, effort)
 
     rec = record_tool(schema)
     system = _system_blocks(frame)

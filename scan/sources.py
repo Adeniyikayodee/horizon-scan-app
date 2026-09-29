@@ -361,6 +361,9 @@ def quote_grounded(url: str, quote: str):
     (uncheckable: no url, a fetch failure, or an unsupported binary)."""
     if not quote or not url or not url.lower().startswith(("http://", "https://")):
         return None
+    if config.DRY_RUN:
+        from . import replay
+        return replay.grounded(url, quote)
     if "example.org" in url:
         return None
     text = _norm(fetch_text(url, max_chars=400000))
@@ -384,6 +387,9 @@ def quote_exact(url: str, quote: str):
     None when the source cannot be read."""
     if not quote or not url or not url.lower().startswith(("http://", "https://")):
         return None
+    if config.DRY_RUN:
+        from . import replay
+        return replay.grounded(url, quote)
     if "example.org" in url:
         return None
     text = _norm(fetch_text(url, max_chars=400000))
