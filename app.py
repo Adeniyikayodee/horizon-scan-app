@@ -627,19 +627,19 @@ with st.sidebar:
     st.markdown('<div class="hs-eyebrow" style="margin-top:2px">Progress</div>', unsafe_allow_html=True)
     stepper(st.session_state.step)
     st.markdown('<div style="height:1px;background:var(--line);margin:14px 0"></div>', unsafe_allow_html=True)
-    ENGINES = {"Model 1": "claude-cli", "Model 2": "openrouter"} if CLI_READY else {"Model 2": "openrouter"}
+    # Model 2 leads, since it is the engine a deployed copy can run. Model 1 appears only
+    # on a machine that has the local Claude Code command, which is the analyst's own.
+    ENGINES = {"Model 2": "openrouter", "Model 1": "claude-cli"} if CLI_READY else {"Model 2": "openrouter"}
     engine = st.radio("Engine", list(ENGINES), key="engine_pick",
-                      help="Model 1 runs on this computer only. Model 2 uses the online account and its balance.")
+                      help="Model 2 uses the online account and its balance. Model 1 runs on this "
+                           "computer only, through the Claude app installed on it.")
     config.PROVIDER = ENGINES[engine]
     config.OR_MODEL = DEFAULT_MODEL
     config.OR_MODEL_STRONG = DEFAULT_MODEL_STRONG
     config.BUDGET_USD = BUDGET_USD
-    if not CLI_READY:
-        st.caption("Model 1 needs the Claude app on the computer running this page, so it is not "
-                   "offered here. Model 2 runs on the online account.")
     if BUDGET_USD:
         st.caption(f"Model 2 stops this run at ${BUDGET_USD:,.0f} of spend.")
-    SCANS = {"Horizon scan": None, "YES program scan": "yes"}
+    SCANS = {"YES program scan": "yes", "Horizon scan": None}
     picked = st.selectbox("Scan", list(SCANS), key="scan_pick",
                           help="Horizon scan: new areas for the Hub to enter. YES program scan: proven "
                                "program designs for youth employment and skills, graded on their evidence, "
@@ -680,18 +680,6 @@ with st.sidebar:
     config.SCAN_MODE = "global" if scope == "Global" else "africa"
     if config.PROVIDER == "openrouter" and not config.OPENROUTER_API_KEY:
         st.error("Model 2 has no key on this server. Add it to .streamlit/secrets.toml.")
-    elif config.PROVIDER == "openrouter" and not config.DRY_RUN:
-        if "or_credit" not in st.session_state:
-            st.session_state.or_credit = client.openrouter_credit()
-        left = st.session_state.or_credit
-        if left is None:
-            st.caption("Model 2 balance could not be read.")
-        elif left < 5:
-            st.error(f"Model 2 has about ${left:,.2f} left on the account. Top it up before running, "
-                     "since without it the searching steps come back empty and the scan looks like "
-                     "it found nothing.")
-        else:
-            st.caption(f"Model 2 balance: about ${left:,.2f}.")
     runs = [r for r in saved_runs() if r["id"] != st.session_state.run_id]
     if runs:
         labels = {f"{SCAN_LABELS.get(r['profile'], 'Horizon scan')}, {r['orgs']} organizations, "
