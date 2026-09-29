@@ -644,7 +644,8 @@ with st.sidebar:
                           help="Horizon scan: new areas for the Hub to enter. YES program scan: proven "
                                "program designs for youth employment and skills, graded on their evidence, "
                                "with a funder scan.")
-    config.DRY_RUN = st.checkbox("Test mode, no cost", value=False,
+    # where no key is set, this link is a walk-through, so test mode starts ticked
+    config.DRY_RUN = st.checkbox("Test mode, no cost", value=not config.OPENROUTER_API_KEY,
                                  help="Runs the whole flow with no model calls and no charge. The YES scan "
                                       "replays a recorded run, with its real sources, quotes, and grades; "
                                       "the horizon scan uses sample data.")
@@ -678,8 +679,9 @@ with st.sidebar:
              "any actor (civil society, foundations, and the private sector too), noting for each how "
              "it could transfer to an African context.")
     config.SCAN_MODE = "global" if scope == "Global" else "africa"
-    if config.PROVIDER == "openrouter" and not config.OPENROUTER_API_KEY:
-        st.error("Model 2 has no key on this server. Add it to .streamlit/secrets.toml.")
+    if config.PROVIDER == "openrouter" and not config.OPENROUTER_API_KEY and not config.DRY_RUN:
+        st.warning("This link runs in test mode only. Tick the box above to walk through the scan "
+                   "at no cost.")
     runs = [r for r in saved_runs() if r["id"] != st.session_state.run_id]
     if runs:
         labels = {f"{SCAN_LABELS.get(r['profile'], 'Horizon scan')}, {r['orgs']} organizations, "
