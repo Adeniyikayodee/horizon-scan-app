@@ -18,3 +18,12 @@ IMPROVEMENT.md
 
 # per-profile run files
 profiles/*/run/
+
+# client material: stays on this machine, never in the public repo
+profiles/*/demo/
+profiles/*/pilot/
+profiles/*/pilot_*/
+profiles/*/pilot_*.xlsx
+profiles/*/eval/
+YES_SCAN_PLAN.md
+FIX.md
