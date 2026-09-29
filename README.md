@@ -140,12 +140,25 @@ streamlit run app.py
 
 Deploy privately so only the team can see it:
 
-1. Push this folder to a private GitHub repo.
-2. On share.streamlit.io, create a new app pointed at `scan-agents/app.py`.
-3. In Settings, set the app to private and invite the team by email. Add the
-   secrets `ANTHROPIC_API_KEY` and `APP_PASSWORD`, and `OPENROUTER_API_KEY` if you
-   use the compare-models path.
-4. Share the URL and the password with the invited team.
+1. Push to a private GitHub repo. This repository is the deploy root, so the app's
+   main file is `app.py`, not a path inside a folder.
+2. On share.streamlit.io, create a new app pointed at `app.py` on the branch you
+   want the team to run. A private repo needs Streamlit's GitHub authorization to
+   include private repositories; without it the deploy cannot read the code.
+3. In Settings, restrict who can view the app and invite the team by email. Repo
+   privacy protects the source, not the app's URL, so set `APP_PASSWORD` as well
+   and treat it as the real gate.
+4. Add the secrets the server needs: `OPENROUTER_API_KEY` for Model 2, and
+   `APP_PASSWORD`. Optional: `OR_MODEL` and `OR_MODEL_STRONG` to change which
+   models Model 2 uses, `SCAN_BUDGET_USD` to stop a run at a set spend, and
+   `ANTHROPIC_API_KEY` only if you want the native Anthropic path rather than
+   OpenRouter.
+5. Share the URL and the password with the invited team.
+
+Two things to know about a deployed copy. Model 1 runs the local Claude Code
+command, which does not exist on a server, so the app offers Model 2 alone there.
+Streamlit Community Cloud storage is temporary, so saved runs do not survive a
+restart or a redeploy; download the deliverables you want to keep.
 
 ## Building the organization roster
 
