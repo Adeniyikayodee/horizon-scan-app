@@ -204,7 +204,7 @@ def _synth() -> dict[str, Any]:
         # guidance, so the walk-through teaches the document rather than repeating itself
         says = re.sub(r"^About [\d,]+ words\.\s*", "", str(s.get("guidance", "")).strip())
         body = f"In a real run, this section does the following. {says}" if says else _SAMPLE_BODY
-        parts += [f"## {s['heading']}", "", body, "", _SAMPLE_BODY, ""]
+        parts += [f"## {s['heading']}", "", body, ""]
     return {"memo_markdown": "\n".join(parts),
             "scorecard_intro": "Sample text, shown in test mode. A real run writes this from the themes."}
 
