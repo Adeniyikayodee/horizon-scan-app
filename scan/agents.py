@@ -633,7 +633,7 @@ async def synthesize(ctx: dict[str, str], themes_list: list[dict[str, Any]],
     out = await _synthesize_draft(ctx, themes_list, extra)
     sp = config.active_spec()
     checks = sp.get("brief_checks")
-    if not checks:
+    if not checks or config.DRY_RUN:
         return out
     from . import plain
     issues = plain.check(out.get("memo_markdown", ""), checks)
@@ -694,7 +694,8 @@ async def _synthesize_draft(ctx: dict[str, str], themes_list: list[dict[str, Any
     # and whatever happens the fullest draft is delivered and the shortfall reported,
     # never silently accepted.
     best: dict[str, Any] = {}
-    for budget in (24000, 32000):
+    budgets = (24000,) if config.DRY_RUN else (24000, 32000)
+    for budget in budgets:
         try:
             out = await structured_call(model=config.MODEL_OPUS, frame=frame, user=user,
                                         schema=schemas.SYNTH_SCHEMA, max_tokens=budget,
@@ -708,6 +709,8 @@ async def _synthesize_draft(ctx: dict[str, str], themes_list: list[dict[str, Any
         if truncated:
             print(f"  synth: memo cut off at {budget:,} tokens, retrying with more headroom")
             continue
+        if config.DRY_RUN:
+            return out              # a walk-through brief is short on purpose
         short = spec.memo_shortfall(out.get("memo_markdown", ""), sp)
         if not short:
             return out

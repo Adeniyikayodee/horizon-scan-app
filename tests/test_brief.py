@@ -84,6 +84,7 @@ def brief_profile(monkeypatch):
 
 
 def test_rewrite_kept_when_it_fixes_issues(brief_profile, monkeypatch):
+    monkeypatch.setattr(config, "DRY_RUN", False)   # the real brief path, not a walk-through
     async def draft(ctx, themes, extra=""):
         return {"memo_markdown": "# T\n\n## What we found\n\nIt is not just training, but jobs.",
                 "scorecard_intro": "i"}
@@ -97,6 +98,7 @@ def test_rewrite_kept_when_it_fixes_issues(brief_profile, monkeypatch):
 
 
 def test_rewrite_rejected_when_it_drops_a_section(brief_profile, monkeypatch):
+    monkeypatch.setattr(config, "DRY_RUN", False)   # the real brief path, not a walk-through
     async def draft(ctx, themes, extra=""):
         return {"memo_markdown": "# T\n\n## What we found\n\nIt is not just training, but jobs.",
                 "scorecard_intro": "i"}

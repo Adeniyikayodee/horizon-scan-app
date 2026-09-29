@@ -127,6 +127,7 @@ def test_openrouter_good_response_still_parses(monkeypatch):
 
 # --- the retry path: one code path covers both providers ------------------------------
 def test_synthesize_retries_on_truncation_then_delivers(monkeypatch):
+    monkeypatch.setattr(config, "DRY_RUN", False)   # the real brief path, not a walk-through
     calls = []
 
     async def _call(**kw):
@@ -146,6 +147,7 @@ def test_synthesize_retries_on_truncation_then_delivers(monkeypatch):
 
 
 def test_synthesize_retries_on_a_short_memo(monkeypatch):
+    monkeypatch.setattr(config, "DRY_RUN", False)   # the real brief path, not a walk-through
     calls = []
 
     async def _call(**kw):
@@ -160,7 +162,12 @@ def test_synthesize_retries_on_a_short_memo(monkeypatch):
 
 
 # --- the dry run models the real shape ------------------------------------------------
-def test_mock_memo_satisfies_the_spec():
+def test_the_walk_through_brief_reads_as_a_sample():
     config.SPEC = dict(SPEC)
     memo = mock._synth()["memo_markdown"]
-    assert S.memo_shortfall(memo, SPEC) == "", "the dry run should exercise a conforming memo"
+    for s in SPEC["memo"]["sections"]:
+        assert f"## {s['heading']}" in memo, "the sample keeps the real brief's shape"
+    assert "sample" in memo.lower() and "test mode" in memo.lower(), "it says what it is"
+    # short on purpose: padding a demo to a real brief's length fills it with one
+    # sentence repeated, which reads as a broken document to whoever opens it
+    assert len(memo.split()) < int(SPEC["memo"]["min_words"])

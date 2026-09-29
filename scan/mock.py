@@ -4,11 +4,26 @@ custom criteria flow through dry runs too.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from . import config, replay, spec as spec_mod
 
 _MARKS = ["strong", "partial", "weak"]
+
+# What the Reader fills in per row. Plain, plausible sentences, so a walk-through reads
+# like a scan rather than like a form with the labels left in.
+_SAMPLE_FIELDS = {
+    "countries": "Ghana; Uganda",
+    "target_group": "Young people who left school early",
+    "design_features": "Six months of training, then a placement with a local employer.",
+    "delivery_partner": "A national training agency, with a local youth organization",
+    "cost_data": "not found",
+    "funders": "A foundation; a development bank",
+    "inclusion": "Reaches young women; disability reach not stated",
+    "level_of_view": "One national program, across two countries",
+    "open_questions": "Whether the gains hold when the program runs at national scale.",
+}
 
 
 def _subject(user: str) -> str:
@@ -41,7 +56,7 @@ def _read(subj: str, h: int) -> dict[str, Any]:
             "quotes": ["The program raised local value retention by a measurable margin."],
             "locator": "Section 3, Results, page 14", "verbatim": True,
             "access_note": "Published 2024.",
-            **{k: ("Ghana" if k == "countries" else f"Sample {k.replace('_', ' ')}.")
+            **{k: _SAMPLE_FIELDS.get(k, "Sample text, shown in test mode.")
                for k in spec_mod.reader_fields(config.active_spec())}}
 
 
@@ -163,31 +178,35 @@ _FILLER = (
     "so the mandate fit is direct and the ground is genuinely open. ")
 
 
+_SAMPLE_LEAD = (
+    "This is a walk-through. The wording below is sample text, written to show the shape of the brief and "
+    "the order it argues in; the figures, programs, and sources in a real run come from the documents the "
+    "scan reads and are checked against them.")
+_SAMPLE_BODY = (
+    "In a real run this section is written from the themes, the evidence behind each one, and the analyst's "
+    "own reading, with every program named and every effect given in the words the evaluation used. Where "
+    "the scan found nothing, it says so plainly rather than filling the space, and where a point rests on "
+    "one source alone, it says that too.")
+
+
 def _synth() -> dict[str, Any]:
-    """A memo shaped to the ACTIVE spec, so a dry run exercises the real structure and
-    the length floor rather than a stub that would fail its own check."""
-    print("  synth    writing memo and scorecard intro")
+    """A walk-through brief, shaped to the ACTIVE spec's own headings. Short on purpose:
+    padding a demo out to a real brief's word count fills the page with one sentence
+    repeated, which reads as a broken document to anyone who opens it."""
+    print("  synth    writing the sample brief")
     sp = config.active_spec()
-    m = spec_mod.memo_spec(sp)
-    floor = int(m.get("min_words", 4000))
-    sections = m.get("sections", [])
-    # spread the floor across the sections, with a little headroom so the mock always
-    # clears its own gate even as the spec's section list changes
-    per = max(1, int(floor * 1.15 / max(1, len(sections)) / len(_FILLER.split())) + 1)
-    filler = _FILLER
-    title = "# Global scan, a wrap-up on the new areas to enter"
-    if sp.get("brief_checks"):
-        filler = ("The scan found program designs that help young people find work, and some have strong proof "
-                  "while others still need more study; the team can use them to plan the next proposal. ")
-        title = "# Program designs that help young people find work"
-        ceiling = int(m.get("max_words") or floor * 1.2)
-        per = max(1, int((floor + ceiling) / 2 / max(1, len(sections)) / len(filler.split())))
-    parts = [title, "", filler.strip(), ""]
+    sections = spec_mod.memo_spec(sp).get("sections", [])
+    title = ("# Sample brief, shown in test mode" if sp.get("brief_checks")
+             else "# Sample memo, shown in test mode")
+    parts = [title, "", _SAMPLE_LEAD, ""]
     for s in sections:
-        parts += [f"## {s['heading']}", "", ((filler if sp.get("brief_checks") else _FILLER) * per).strip(), ""]
-    memo = "\n".join(parts)
-    return {"memo_markdown": memo,
-            "scorecard_intro": "Themes scored on the criteria, with two clean new areas to enter first."}
+        # each section says what a real run puts there, taken from the spec's own
+        # guidance, so the walk-through teaches the document rather than repeating itself
+        says = re.sub(r"^About [\d,]+ words\.\s*", "", str(s.get("guidance", "")).strip())
+        body = f"In a real run, this section does the following. {says}" if says else _SAMPLE_BODY
+        parts += [f"## {s['heading']}", "", body, "", _SAMPLE_BODY, ""]
+    return {"memo_markdown": "\n".join(parts),
+            "scorecard_intro": "Sample text, shown in test mode. A real run writes this from the themes."}
 
 
 def _gaps(user: str) -> dict[str, Any]:
