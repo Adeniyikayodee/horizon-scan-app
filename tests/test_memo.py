@@ -11,6 +11,7 @@ import asyncio
 import json
 
 import pytest
+from pathlib import Path
 
 from scan import agents, client, config, mock
 from scan import spec as S
@@ -42,6 +43,8 @@ def test_editing_the_spec_moves_the_prompt_and_the_check_together():
 
 
 def test_output_spec_no_longer_states_a_second_length():
+    if not (config.CONTEXT_DIR / 'output_spec.md').exists():
+        pytest.skip("no scan profile installed")
     text = (config.CONTEXT_DIR / "output_spec.md").read_text(encoding="utf-8").lower()
     assert "two to three pages" not in text, "the contradicting length statement is back"
 

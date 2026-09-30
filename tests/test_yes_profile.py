@@ -1,6 +1,8 @@
 """B6: the YES profile loads, runs end to end in test mode, and keeps its rules."""
 from __future__ import annotations
 
+import pytest
+
 import asyncio
 import json
 import shutil
@@ -12,6 +14,11 @@ from openpyxl import load_workbook
 from scan import config, io_xlsx, pipeline, spec
 
 PROFILE = Path(__file__).resolve().parent.parent / "profiles" / "yes"
+
+# The scan's own material travels in a secret, not in this repository, so these checks
+# run where it is installed and are skipped where it is not (see scan/bundle.py).
+_INSTALLED = (Path(__file__).resolve().parent.parent / "profiles" / "yes" / "profile.json").exists()
+pytestmark = pytest.mark.skipif(not _INSTALLED, reason="no scan profile installed")
 
 
 def test_profile_is_complete():

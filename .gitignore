@@ -27,3 +27,8 @@ profiles/*/pilot_*.xlsx
 profiles/*/eval/
 YES_SCAN_PLAN.md
 FIX.md
+
+# the scan's own material, packed for the host's secrets
+bundle.b64
+context/
+profiles/

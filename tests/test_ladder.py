@@ -5,6 +5,7 @@ import asyncio
 import json
 
 import pytest
+from pathlib import Path
 
 from scan import config, io_xlsx, ladder, pipeline, sources, spec
 
@@ -287,6 +288,8 @@ def test_golden_eval_scoring(monkeypatch, tmp_path):
 def test_golden_file_is_well_formed():
     import json as _json
     from pathlib import Path
+    if not (Path(__file__).resolve().parent.parent / "profiles" / "yes" / "golden.json").exists():
+        pytest.skip("no scan profile installed")
     g = _json.loads((Path(__file__).resolve().parent.parent / "profiles" / "yes" / "golden.json").read_text())
     ev = g["evaluations"]
     assert 12 <= len(ev) <= 15

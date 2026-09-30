@@ -133,6 +133,8 @@ def test_both_scans_route_the_same_way(monkeypatch):
     monkeypatch.setattr(config, "CLI_ROUTE_MODE", "tiered")
     monkeypatch.setattr(config, "SPEC", None)
     horizon = {s: client.cli_route(s) for s in ("scout", "reader", "scorer", "themer", "synthesizer")}
+    if not (Path(__file__).resolve().parent.parent / "profiles" / "yes" / "profile.json").exists():
+        pytest.skip("no scan profile installed")
     yes = _json.loads((Path(__file__).resolve().parent.parent / "profiles" / "yes" / "profile.json").read_text())
     monkeypatch.setattr(config, "SPEC", yes)
     assert {s: client.cli_route(s) for s in horizon} == horizon

@@ -19,7 +19,8 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-from scan import agents, client, config, guardrail, io_xlsx, pdf_out, pipeline, replay, sources, spec
+from scan import (agents, bundle, client, config, guardrail, io_xlsx, pdf_out, pipeline, replay,
+                  sources, spec)
 
 
 def _secret(key: str, default: str = "") -> str:
@@ -33,6 +34,9 @@ def _secret(key: str, default: str = "") -> str:
 config.API_KEY = _secret("ANTHROPIC_API_KEY", config.API_KEY)
 config.OPENROUTER_API_KEY = _secret("OPENROUTER_API_KEY", config.OPENROUTER_API_KEY)
 APP_PASSWORD = _secret("APP_PASSWORD", "")
+# The profile, the roster, and the framing the agents read are the institute's, so they
+# are not in the repository. On a host they arrive as one secret and are unpacked here.
+bundle.ensure(_secret(bundle.SECRET, ""))
 
 st.set_page_config(page_title="Horizon Scan", page_icon="🧭", layout="wide")
 
@@ -640,6 +644,10 @@ with st.sidebar:
     if BUDGET_USD:
         st.caption(f"Model 2 stops this run at ${BUDGET_USD:,.0f} of spend.")
     SCANS = {"YES program scan": "yes", "Horizon scan": None}
+    SCANS = {k: v for k, v in SCANS.items() if v is None or bundle.profile_installed(v)}
+    if not SCANS:
+        st.error("No scan profile is installed on this server.")
+        st.stop()
     picked = st.selectbox("Scan", list(SCANS), key="scan_pick",
                           help="Horizon scan: new areas for the Hub to enter. YES program scan: proven "
                                "program designs for youth employment and skills, graded on their evidence, "
